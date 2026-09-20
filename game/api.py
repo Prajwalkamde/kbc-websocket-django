@@ -1,27 +1,28 @@
 import json
+import re
 import uuid
 from functools import wraps
 
-from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
-from django.db import transaction
 from django.http import JsonResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 
-from .constants import FASTEST_PROMPT, PRIZE_LADDER, SAFE_LEVELS
 from .game import state_for_host, state_for_player
 from .models import AudiencePoll, ExpertRequest, GameRoom, Player
 from .realtime import broadcast_host_state, broadcast_room
 from .services import (
     GameError, advance_after_reveal, create_or_reconnect_player, create_room,
-    expert_answer, finalize_poll, finish_fastest_finger, leaderboard,
+    expert_answer, finalize_poll, finish_fastest_finger,
     lock_question, maybe_timeout, pause_question, resume_question,
     reveal_question, start_fastest_finger, start_game, start_question,
     submit_answer, submit_fastest_finger,
     use_lifeline, vote_audience,
 )
+
+# Room codes are six upper-case letters/digits; anything else in a URL is junk.
+ROOM_CODE_PATTERN = re.compile(r"^[A-Z0-9]{6}$")
 
 
 def json_body(request):
@@ -73,8 +74,8 @@ def player_from_request(room, request):
         raise GameError("Player session missing.")
     try:
         session_id = uuid.UUID(str(token))
-    except ValueError as exc:
-        raise GameError("Invalid player session.")
+    except ValueError:
+        raise GameError("Invalid player session.") from None
     return Player.objects.get(room=room, session_id=session_id)
 
 
@@ -82,10 +83,21 @@ def home(request):
     return render(request, "home.html")
 
 
+def normalize_room_code(code):
+    """Return the canonical room code or raise 404 for anything malformed.
+
+    The code is rendered into the page (and into a JavaScript string), so it is
+    validated here instead of trusting the URL segment.
+    """
+    normalized = str(code or "").strip().upper()
+    if not ROOM_CODE_PATTERN.match(normalized):
+        raise Http404("Unknown room code.")
+    return normalized
+
+
 @superuser_page_required
 def host_page(request, code=None):
-    response = render(request, "host.html", {"room_code": code or ""})
-    return response
+    return render(request, "host.html", {"room_code": normalize_room_code(code) if code else ""})
 
 
 def join_page(request):
@@ -93,7 +105,7 @@ def join_page(request):
 
 
 def player_page(request, code):
-    return render(request, "player.html", {"room_code": code.upper()})
+    return render(request, "player.html", {"room_code": normalize_room_code(code)})
 
 
 @require_POST
@@ -276,9 +288,8 @@ def api_expert_answer(request, code):
 @require_GET
 def api_poll(request, code, poll_id):
     room = get_room(code)
-    from .models import AudiencePoll
     try:
-        player = player_from_request(room, request)
+        player_from_request(room, request)
         poll = AudiencePoll.objects.get(id=poll_id, game_question__room=room)
         counts, percentages = finalize_poll(poll)
         return JsonResponse({

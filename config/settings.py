@@ -83,6 +83,10 @@ CELERY_RESULT_SERIALIZER = "json"
 CELERY_TIMEZONE = "Asia/Kolkata"
 CELERY_TASK_TRACK_STARTED = True
 CELERY_TASK_TIME_LIMIT = 30
+# Queue one ETA task per question so answers lock exactly at the deadline even
+# if the beat scheduler is delayed. Needs a reachable broker, so it stays off
+# for tests and WebSocket-only deployments (beat remains the safety net).
+CELERY_DEADLINE_TASKS = os.getenv("CELERY_DEADLINE_TASKS", "False").lower() == "true"
 CELERY_BEAT_SCHEDULE = {
     "process-expired-questions": {
         "task": "game.tasks.process_expired_questions",

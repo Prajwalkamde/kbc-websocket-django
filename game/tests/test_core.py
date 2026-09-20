@@ -4,9 +4,9 @@ from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 from django.utils import timezone
 
-from game.models import GameRoom, Player, Question
+from game.models import GameRoom, Question
 from game.services import (
-    GameError, create_or_reconnect_player, prepare_question_set,
+    GameError, create_or_reconnect_player,
     finish_fastest_finger, start_fastest_finger, start_game, start_question,
     submit_answer, submit_fastest_finger, lock_question, pause_question,
     resume_question, reveal_question,

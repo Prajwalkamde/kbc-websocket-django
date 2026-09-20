@@ -150,19 +150,7 @@
     }, 3500);
   }
 
-  function escapeHtml(s) {
 
-    return String(s ?? "").replace(
-      /[&<>"']/g,
-      m => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;"
-      }[m])
-    );
-  }
 
   /* =========================================================
      CREATE ROOM
@@ -421,33 +409,23 @@
      PLAYERS
   ========================================================= */
 
-  function renderPlayers(
-    players
-  ) {
+  function renderPlayers(players) {
 
     $("player-count").textContent =
       players?.length || 0;
 
-    $("player-list").innerHTML =
-      (players || [])
-        .map(p => `
-          <div class="player-row">
-            <span>
-              <span
-                class="dot ${
-                  p.connected
-                    ? "on"
-                    : ""
-                }"
-              ></span>
-
-              ${escapeHtml(
-                p.name
-              )}
-            </span>
-          </div>
-        `)
-        .join("");
+    KBCDom.render(
+      $("player-list"),
+      (players || []).map(p =>
+        KBCDom.el("div", { class: "player-row" }, [
+          KBCDom.el("span", {}, [
+            KBCDom.el("span", { class: p.connected ? "dot on" : "dot" }),
+            " ",
+            p.name
+          ])
+        ])
+      )
+    );
   }
 
   /* =========================================================
@@ -456,267 +434,108 @@
 
   function renderLB(rows) {
 
-    $("leaderboard-body").innerHTML =
-      (rows || [])
-        .map(x => `
-          <div class="leader-row">
-
-            <b>#${x.rank}</b>
-
-            <span>
-              ${escapeHtml(
-                x.name
-              )}
-            </span>
-
-            <b>
-              ${money(x.prize)}
-            </b>
-
-            <span>
-              ${
-                (
-                  Number(
-                    x.time_ms || 0
-                  ) / 1000
-                ).toFixed(2)
-              }
-              s
-            </span>
-
-          </div>
-        `)
-        .join("");
+    KBCDom.render(
+      $("leaderboard-body"),
+      (rows || []).map(x =>
+        KBCDom.el("div", { class: "leader-row" }, [
+          KBCDom.el("b", { text: `#${Number(x.rank || 0)}` }),
+          KBCDom.el("span", { text: x.name }),
+          KBCDom.el("b", { text: money(x.prize) }),
+          KBCDom.el("span", {
+            text: `${(Number(x.time_ms || 0) / 1000).toFixed(2)} s`
+          })
+        ])
+      )
+    );
   }
 
   /* =========================================================
      FINAL RESULTS
   ========================================================= */
 
-  function renderFinalResults(
-    rows
-  ) {
+  function renderFinalResults(rows) {
 
-    const panel =
-      $("final-results");
+    const panel = $("final-results");
+    const body = $("final-results-body");
 
-    if (!panel) return;
+    if (!panel || !body) return;
 
     if (!rows?.length) {
-
-      panel.classList.add(
-        "hidden"
-      );
-
+      panel.classList.add("hidden");
+      KBCDom.clear(body);
       return;
     }
 
-    panel.classList.remove(
-      "hidden"
-    );
+    panel.classList.remove("hidden");
 
-    $("final-results-body").innerHTML =
-      `
-      <table class="results-table">
-
-        <thead>
-          <tr>
-            <th>Player</th>
-            <th>Score</th>
-            <th>Correct Questions</th>
-            <th>Wrong Questions</th>
-            <th>Total Time</th>
-          </tr>
-        </thead>
-
-        <tbody>
-
-          ${rows.map(x => `
-            <tr>
-
-              <td>
-                ${escapeHtml(
-                  x.name
-                )}
-              </td>
-
-              <td>
-                ${money(
-                  x.score
-                )}
-              </td>
-
-              <td>
-                ${
-                  x.correct?.length
-                    ? x.correct.join(", ")
-                    : "None"
-                }
-              </td>
-
-              <td>
-                ${
-                  x.wrong?.length
-                    ? x.wrong.join(", ")
-                    : "None"
-                }
-              </td>
-
-              <td>
-                ${
-                  (
-                    Number(
-                      x.time_ms || 0
-                    ) / 1000
-                  ).toFixed(2)
-                }
-                s
-              </td>
-
-            </tr>
-          `).join("")}
-
-        </tbody>
-
-      </table>
-      `;
+    KBCDom.render(body, [
+      KBCDom.table(
+        ["Player", "Score", "Correct Questions", "Wrong Questions", "Total Time"],
+        rows.map(x => [
+          x.name,
+          money(x.score),
+          x.correct?.length ? x.correct.join(", ") : "None",
+          x.wrong?.length ? x.wrong.join(", ") : "None",
+          `${(Number(x.time_ms || 0) / 1000).toFixed(2)} s`
+        ])
+      )
+    ]);
   }
 
   /* =========================================================
      FASTEST FINGER RESULTS
   ========================================================= */
 
-  function renderFastestResults(
-    ff
-  ) {
+  function renderFastestResults(ff) {
 
-    if (!ff) return;
+    const body = $("fastest-results-body");
+    if (!ff || !body) return;
 
     const options =
-      ff.prompt?.options
-        ?.map(
-          (o, i) => `
-            <li>
-              <b>${i + 1}.</b>
-              ${o.map(
-                escapeHtml
-              ).join(" → ")}
-            </li>
-          `
-        )
-        .join("") || "";
+      (ff.prompt?.options || []).map((option, index) =>
+        KBCDom.el("li", {}, [
+          KBCDom.el("b", { text: `${index + 1}.` }),
+          " ",
+          (option || []).join(" → ")
+        ])
+      );
 
     const results =
       ff.results?.length
-        ? `
-          <table class="results-table">
+        ? KBCDom.table(
+            ["Rank", "Player", "Answer", "Time"],
+            ff.results.map((x, i) => [
+              `#${i + 1}`,
+              x.name,
+              KBCDom.cell(
+                [
+                  (x.answer || []).join(" → "),
+                  KBCDom.el("br"),
+                  KBCDom.el("small", { text: x.correct ? "Correct" : "Wrong" })
+                ],
+                { class: x.correct ? "answer-correct" : "answer-wrong" }
+              ),
+              `${(Number(x.time || 0) / 1000).toFixed(2)} s`
+            ])
+          )
+        : KBCDom.el("p", { text: "No submissions yet." });
 
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Player</th>
-                <th>Answer</th>
-                <th>Time</th>
-              </tr>
-            </thead>
+    KBCDom.render(body, [
+      KBCDom.el("p", {
+        class: "fastest-result-question",
+        text: ff.prompt?.text || ""
+      }),
 
-            <tbody>
+      KBCDom.el("ol", { class: "fastest-option-list" }, options),
 
-              ${ff.results.map(
-                (x, i) => `
-                  <tr>
+      KBCDom.el("p", { class: "fastest-correct-answer" }, [
+        KBCDom.el("b", { text: "Correct answer:" }),
+        " ",
+        (ff.prompt?.correct_order || []).join(" → ")
+      ]),
 
-                    <td>
-                      #${i + 1}
-                    </td>
-
-                    <td>
-                      ${escapeHtml(
-                        x.name
-                      )}
-                    </td>
-
-                    <td
-                      class="${
-                        x.correct
-                          ? "answer-correct"
-                          : "answer-wrong"
-                      }"
-                    >
-
-                      ${
-                        x.answer
-                          .map(
-                            escapeHtml
-                          )
-                          .join(
-                            " → "
-                          )
-                      }
-
-                      <br>
-
-                      <small>
-                        ${
-                          x.correct
-                            ? "Correct"
-                            : "Wrong"
-                        }
-                      </small>
-
-                    </td>
-
-                    <td>
-                      ${
-                        (
-                          Number(
-                            x.time || 0
-                          ) / 1000
-                        ).toFixed(2)
-                      }
-                      s
-                    </td>
-
-                  </tr>
-                `
-              ).join("")}
-
-            </tbody>
-
-          </table>
-        `
-        : "<p>No submissions yet.</p>";
-
-    $("fastest-results-body").innerHTML =
-      `
-      <p class="fastest-result-question">
-        ${escapeHtml(
-          ff.prompt?.text || ""
-        )}
-      </p>
-
-      <ol class="fastest-option-list">
-        ${options}
-      </ol>
-
-      <p class="fastest-correct-answer">
-
-        <b>
-          Correct answer:
-        </b>
-
-        ${
-          ff.prompt?.correct_order
-            ?.map(
-              escapeHtml
-            )
-            .join(" → ") || ""
-        }
-
-      </p>
-
-      ${results}
-      `;
+      results
+    ]);
   }
 
   /* =========================================================
@@ -737,7 +556,7 @@
 
     if (!data.question || !questionLive) {
       panel.classList.add("hidden");
-      panel.innerHTML = "";
+      KBCDom.clear(panel);
       return;
     }
 
@@ -753,19 +572,21 @@
       Number(data.players?.length || data.player_count || 0);
 
     panel.classList.remove("hidden");
-    panel.innerHTML =
-      `
-        <div class="answer-summary">
-          Answered ${submitted} / ${total}
-        </div>
-        ${"ABCD".split("").map(letter => `
-          <div class="stat">
-            <b>${letter}</b>
-            <br>
-            ${Number(distribution[letter] || 0)}
-          </div>
-        `).join("")}
-      `;
+
+    KBCDom.render(panel, [
+      KBCDom.el("div", {
+        class: "answer-summary",
+        text: `Answered ${submitted} / ${total}`
+      }),
+
+      ..."ABCD".split("").map(letter =>
+        KBCDom.el("div", { class: "stat" }, [
+          KBCDom.el("b", { text: letter }),
+          KBCDom.el("br"),
+          String(Number(distribution[letter] || 0))
+        ])
+      )
+    ]);
   }
 
   function renderDelta(
@@ -902,22 +723,27 @@
         "REVEAL"
       ].includes(data.status);
 
-      $("options").innerHTML =
+      KBCDom.render(
+        $("options"),
         Object.entries(
           data.question.options || {}
         )
-        .map(
-          ([k, v]) => `
-            <div class="option">
-              <b>${k}.</b>
-              ${escapeHtml(v)}
-              ${showCounts ? `<span class="option-count">${Number(distribution[k] || 0)}</span>` : ""}
-            </div>
-          `
+        .map(([k, v]) =>
+          KBCDom.el("div", { class: "option" }, [
+            KBCDom.el("b", { text: `${k}.` }),
+            " ",
+            v,
+            showCounts
+              ? KBCDom.el("span", {
+                  class: "option-count",
+                  text: String(Number(distribution[k] || 0))
+                })
+              : null
+          ])
         )
-        .join("");
+      );
     } else if ($("options")) {
-      $("options").innerHTML = "";
+      KBCDom.clear($("options"));
     }
 
     renderAnswerStats(data);
@@ -929,30 +755,21 @@
       data.question?.correct_option
     ) {
 
-      $("reveal")
-        .classList
-        .remove("hidden");
+      const revealPanel = $("reveal");
+      revealPanel.classList.remove("hidden");
 
-      $("reveal").innerHTML =
-        `
-        <b>
-          CORRECT ANSWER:
-          ${data.question.correct_option}
-        </b>
+      KBCDom.render(revealPanel, [
+        KBCDom.el("b", {
+          text: `CORRECT ANSWER: ${data.question.correct_option}`
+        }),
 
-        ${
-          data.question.explanation
-            ? `
-              <br>
-              <span class="muted">
-                ${escapeHtml(
-                  data.question.explanation
-                )}
-              </span>
-            `
-            : ""
-        }
-        `;
+        data.question.explanation
+          ? KBCDom.el("span", { class: "muted" }, [
+              KBCDom.el("br"),
+              data.question.explanation
+            ])
+          : null
+      ]);
 
     } else {
 
@@ -1115,46 +932,35 @@
         .classList
         .remove("hidden");
 
-      const options =
-        fastest.prompt?.options
-          ?.map(
-            (o, i) => `
-              <div class="fastest-choice">
+      KBCDom.render(
+        $("fastest-panel"),
+        [
+          KBCDom.el("div", {
+            class: "eyebrow",
+            text: "FASTEST FINGER FIRST"
+          }),
 
-                <b>
-                  ${i + 1}.
-                </b>
+          KBCDom.el("h2", {
+            text: fastest.prompt?.text || ""
+          }),
 
-                ${o.map(
-                  escapeHtml
-                ).join(" → ")}
+          KBCDom.el(
+            "div",
+            { class: "fastest-options" },
+            (fastest.prompt?.options || []).map((option, index) =>
+              KBCDom.el("div", { class: "fastest-choice" }, [
+                KBCDom.el("b", { text: `${index + 1}.` }),
+                " ",
+                (option || []).join(" → ")
+              ])
+            )
+          ),
 
-              </div>
-            `
-          )
-          .join("") || "";
-
-      $("fastest-panel").innerHTML =
-        `
-        <div class="eyebrow">
-          FASTEST FINGER FIRST
-        </div>
-
-        <h2>
-          ${escapeHtml(
-            fastest.prompt?.text || ""
-          )}
-        </h2>
-
-        <div class="fastest-options">
-          ${options}
-        </div>
-
-        <p>
-          Submissions:
-          ${fastest.submissions || 0}
-        </p>
-        `;
+          KBCDom.el("p", {
+            text: `Submissions: ${Number(fastest.submissions || 0)}`
+          })
+        ]
+      );
 
     } else {
 
@@ -1367,109 +1173,3 @@
   }
 
 })();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// (function () {
-//   const codeFromPath = location.pathname.split("/").filter(Boolean).pop();
-//   let roomCode = codeFromPath && codeFromPath !== "host" ? codeFromPath.toUpperCase() : "";
-//   let hostSession = localStorage.getItem("host_session") || "";
-//   let socket = null, reconnectTimer = null, fallbackTimer = null, timerHandle = null;
-//   let soundOn = true, audioContext = null, previousStatus = "";
-//   const $ = id => document.getElementById(id);
-//   const money = n => "₹" + Number(n || 0).toLocaleString("en-IN");
-//   const wsUrl = () => `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws/rooms/${roomCode}/`;
-
-//   function playTone(frequency, duration = .12, delay = 0) {
-//     if (!soundOn) return; const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return;
-//     audioContext = audioContext || new AC(); const start = audioContext.currentTime + delay;
-//     const oscillator = audioContext.createOscillator(), gain = audioContext.createGain();
-//     oscillator.type = "sine"; oscillator.frequency.value = frequency; gain.gain.setValueAtTime(.0001, start);
-//     gain.gain.exponentialRampToValueAtTime(.055, start + .015); gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
-//     oscillator.connect(gain).connect(audioContext.destination); oscillator.start(start); oscillator.stop(start + duration + .02);
-//   }
-//   function playCue(name) { if (name === "start") { playTone(392, .14); playTone(523, .18, .12) } if (name === "reveal") { playTone(523, .12); playTone(659, .18, .1) } if (name === "end") { playTone(659, .14); playTone(523, .14, .12); playTone(392, .22, .24) } if (name === "click") playTone(260, .06) }
-//   function show(msg) { $("host-message").textContent = msg; $("host-message").classList.remove("hidden"); setTimeout(() => $("host-message").classList.add("hidden"), 3500) }
-//   function escapeHtml(s) { return String(s ?? "").replace(/[&<>"']/g, m => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" }[m])) }
-
-//   async function create() {
-//     try {
-//       const r = await fetch("/api/rooms/create/", { method: "POST", headers: { "X-CSRFToken": window.CSRF_TOKEN } }), d = await r.json();
-//       if (!d.ok) throw new Error(d.error); roomCode = d.room_code; hostSession = d.host_session; localStorage.setItem("host_session", hostSession);
-//       $("room-code").textContent = roomCode; history.replaceState({}, "", `/host/${roomCode}/`); connect();
-//     } catch (e) { show(e.message) }
-//   }
-//   function connect() {
-//     if (!roomCode || !hostSession) return;
-//     clearTimeout(reconnectTimer); try { socket?.close() } catch (_) { }
-//     socket = new WebSocket(wsUrl());
-//     socket.onopen = () => { socket.send(JSON.stringify({ type: "auth", role: "host", token: hostSession })); clearInterval(fallbackTimer) };
-//     socket.onmessage = e => { try { const m = JSON.parse(e.data); if (m.type === "host.state" || m.type === "authenticated") render(m.state); if (m.type === "host.delta") renderDelta(m.state); if (m.type === "error" || m.type === "auth_error") show(m.error) } catch (_) { } };
-//     socket.onclose = () => { fallbackFetch(); reconnectTimer = setTimeout(connect, 2000) };
-//     socket.onerror = () => { try { socket.close() } catch (_) { } };
-//   }
-//   function send(action, body = {}) {
-//     if (!socket || socket.readyState !== WebSocket.OPEN) { show("Reconnecting…"); return }
-//     socket.send(JSON.stringify({ type: "action", action, ...body }));
-//   }
-//   async function fallbackFetch() {
-//     if (!roomCode) return;
-//     try { const r = await fetch(`/api/rooms/${roomCode}/state/`, { headers: { "X-Host-Session": hostSession } }); const d = await r.json(); if (d.ok) render(d.state) } catch (_) { }
-//     clearInterval(fallbackTimer); fallbackTimer = setInterval(fallbackFetch, 5000);
-//   }
-//   function renderPlayers(players) { $("player-count").textContent = players?.length || 0; $("player-list").innerHTML = (players || []).map(p => `<div class="player-row"><span><span class="dot ${p.connected ? "on" : ""}"></span> ${escapeHtml(p.name)}</span></div>`).join("") }
-//   function renderLB(rows) { $("leaderboard-body").innerHTML = (rows || []).map(x => `<div class="leader-row"><b>#${x.rank}</b><span>${escapeHtml(x.name)}</span><b>${money(x.prize)}</b><span>${(x.time_ms / 1000).toFixed(2)} s</span></div>`).join("") }
-//   function renderFinalResults(rows) { const panel = $("final-results"); if (!rows?.length) { panel.classList.add("hidden"); return } panel.classList.remove("hidden"); $("final-results-body").innerHTML = `<table class="results-table"><thead><tr><th>Player</th><th>Score</th><th>Correct Questions</th><th>Wrong Questions</th><th>Total Time</th></tr></thead><tbody>${rows.map(x => `<tr><td>${escapeHtml(x.name)}</td><td>${money(x.score)}</td><td>${x.correct.length ? x.correct.join(", ") : "None"}</td><td>${x.wrong.length ? x.wrong.join(", ") : "None"}</td><td>${(x.time_ms / 1000).toFixed(2)} s</td></tr>`).join("")}</tbody></table>` }
-//   function renderFastestResults(ff) { if (!ff) return; const options = ff.prompt.options?.map((o, i) => `<li><b>${i + 1}.</b> ${o.map(escapeHtml).join(" → ")}</li>`).join("") || ""; const results = ff.results?.length ? `<table class="results-table"><thead><tr><th>Rank</th><th>Player</th><th>Answer</th><th>Time</th></tr></thead><tbody>${ff.results.map((x, i) => `<tr><td>#${i + 1}</td><td>${escapeHtml(x.name)}</td><td class="${x.correct ? "answer-correct" : "answer-wrong"}">${x.answer.map(escapeHtml).join(" → ")}<br><small>${x.correct ? "Correct" : "Wrong"}</small></td><td>${(x.time / 1000).toFixed(2)} s</td></tr>`).join("")}</tbody></table>` : "<p>No submissions yet.</p>"; $("fastest-results-body").innerHTML = `<p class="fastest-result-question">${escapeHtml(ff.prompt.text)}</p><ol class="fastest-option-list">${options}</ol><p class="fastest-correct-answer"><b>Correct answer:</b> ${ff.prompt.correct_order.map(escapeHtml).join(" → ")}</p>${results}` }
-//   function renderDelta(delta) {
-//     if (!delta) return;
-//     if (delta.answers) {
-//       $("answer-stats").classList.remove("hidden");
-//       $("answer-stats").innerHTML = Object.entries(delta.answers.distribution).map(([k, v]) => `<div class="stat"><b>${k}</b><br>${v}</div>`).join("");
-//     }
-//     if (delta.fastest && delta.fastest.submissions !== undefined) {
-//       const current = $("fastest-panel").querySelector("p");
-//       if (current) current.textContent = `Submissions: ${delta.fastest.submissions}`;
-//     }
-//   }
-//   function render(data) {
-//     if (!data) return;
-//     if (previousStatus !== data.status) { if (data.status === "QUESTION_ACTIVE") playCue("start"); if (data.status === "REVEAL") playCue("reveal"); if (data.status === "GAME_OVER" || data.status === "FINAL") playCue("end"); previousStatus = data.status }
-//     $("stage-state").textContent = data.status; $("question-number").textContent = `${data.current_question || 0} / ${data.total_questions}`;
-//     renderPlayers(data.players); renderLB(data.leaderboard); renderFinalResults(data.final_results);
-//     if (data.question) { $("category").textContent = `${data.question.category} · ${data.question.difficulty}`; $("question-text").textContent = data.question.text; $("options").innerHTML = Object.entries(data.question.options).map(([k, v]) => `<div class="option"><b>${k}.</b> ${escapeHtml(v)}</div>`).join("") }
-//     if (data.answers) { $("answer-stats").classList.remove("hidden"); $("answer-stats").innerHTML = Object.entries(data.answers.distribution).map(([k, v]) => `<div class="stat"><b>${k}</b><br>${v}</div>`).join("") }
-//     if (data.question?.correct_option) { $("reveal").classList.remove("hidden"); $("reveal").innerHTML = `<b>CORRECT ANSWER: ${data.question.correct_option}</b>${data.question.explanation ? `<br><span class="muted">${escapeHtml(data.question.explanation)}</span>` : ""}` } else $("reveal").classList.add("hidden");
-//     if (data.fastest?.started && !data.fastest.locked) { $("fastest-panel").classList.remove("hidden"); const ff = data.fastest; const options = ff.prompt.options?.map((o, i) => `<div class="fastest-choice"><b>${i + 1}.</b> ${o.map(escapeHtml).join(" → ")}</div>`).join("") || ""; $("fastest-panel").innerHTML = `<div class="eyebrow">FASTEST FINGER FIRST</div><h2>${escapeHtml(ff.prompt.text)}</h2><div class="fastest-options">${options}</div><p>Submissions: ${ff.submissions}</p>` } else $("fastest-panel").classList.add("hidden");
-//     renderFastestResults(data.fastest); startTimer(data.status === "QUESTION_ACTIVE" ? data.deadline : null);
-//   }
-//   function startTimer(deadline) { clearInterval(timerHandle); if (!deadline) { $("timer").textContent = "—"; return } timerHandle = setInterval(() => { $("timer").textContent = Math.max(0, Math.ceil((new Date(deadline) - Date.now()) / 1000)) }, 200) }
-
-//   $("create-room").onclick = create;
-//   document.querySelectorAll("[data-action]").forEach(btn => btn.onclick = () => { if (!roomCode) return show("Create a room first."); send(btn.dataset.action, { sequence: btn.dataset.action === "start_question" ? null : undefined }) });
-//   $("sound-toggle").onclick = () => { soundOn = !soundOn; if (soundOn) { audioContext = audioContext || new (window.AudioContext || window.webkitAudioContext)(); playCue("click") } $("sound-toggle").textContent = soundOn ? "🔊 Sound ON" : "🔇 Sound OFF" };
-//   $("fullscreen").onclick = () => document.documentElement.requestFullscreen?.();
-//   $("leaderboard-open").onclick = () => $("leaderboard-modal").classList.remove("hidden"); $("leaderboard-close").onclick = () => $("leaderboard-modal").classList.add("hidden");
-//   $("fastest-results-open").onclick = () => $("fastest-results-modal").classList.remove("hidden"); $("fastest-results-close").onclick = () => $("fastest-results-modal").classList.add("hidden");
-//   if (roomCode) { $("room-code").textContent = roomCode; connect() }
-// })();

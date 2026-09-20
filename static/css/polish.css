@@ -237,3 +237,15 @@ body {
 .life { background: #182c58; border-color: #3d5b96; color: #e2eaff; }
 .life:hover { background: #243d73; }
 .dot { background: #63718f; }
+
+/* ---------------------------------------------------------------------------
+   Safe DOM rendering (static/js/dom.js) tweaks.
+   The classes are unchanged; these rules cover the nodes the DOM builders
+   create directly (letter badges, answer verdicts, option counters).
+--------------------------------------------------------------------------- */
+.stat b { display: block; margin-bottom: 2px; color: var(--gold); font-size: 16px; letter-spacing: .04em; }
+.stats .answer-summary { color: #e6eeff; }
+.results-table td small { display: block; margin-top: 4px; color: #c5d1e8; }
+.fastest-option-list li b { margin-right: 5px; color: var(--gold); }
+.fastest-choice b, .option b { pointer-events: none; }
+.option-count { pointer-events: none; }

@@ -2,7 +2,6 @@ import uuid
 
 from channels.db import database_sync_to_async
 from channels.generic.websocket import AsyncJsonWebsocketConsumer
-from django.contrib.auth.models import AnonymousUser
 
 from .game import state_for_host, state_for_player
 from .models import AudiencePoll, ExpertRequest, GameRoom, Player
@@ -17,7 +16,6 @@ from .realtime import (
 from .services import (
     GameError,
     advance_after_reveal,
-    create_or_reconnect_player,
     expert_answer,
     finish_fastest_finger,
     lock_question,
@@ -222,7 +220,9 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
 
     @database_sync_to_async
     def get_room(self, code):
-        return GameRoom.objects.get(room_code=code)
+        # ``.first()`` keeps an unknown room code from raising DoesNotExist
+        # inside connect(); the caller closes the socket with 4404 instead.
+        return GameRoom.objects.filter(room_code=code).first()
 
     @database_sync_to_async
     def refresh_room(self):

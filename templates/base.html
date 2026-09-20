@@ -11,6 +11,6 @@
 <body>
 <div class="bg-orb orb-a"></div><div class="bg-orb orb-b"></div>
 {% block content %}{% endblock %}
-<script>window.CSRF_TOKEN="{{ csrf_token }}";</script>
+<script>window.CSRF_TOKEN="{{ csrf_token|escapejs }}";</script>
 </body>
 </html>
