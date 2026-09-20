@@ -6,7 +6,14 @@ from django.contrib.auth.models import AnonymousUser
 
 from .game import state_for_host, state_for_player
 from .models import AudiencePoll, ExpertRequest, GameRoom, Player
-from .realtime import broadcast_host_delta, broadcast_host_state, broadcast_room, send_player_state, player_group
+from .realtime import (
+    broadcast_host_delta,
+    broadcast_host_state,
+    broadcast_private_player_states,
+    broadcast_room,
+    send_player_state,
+    player_group,
+)
 from .services import (
     GameError,
     advance_after_reveal,
@@ -107,6 +114,7 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         elif action == "finish_fastest":
             await self.db_action(finish_fastest_finger)
         elif action == "start_question":
+            await self.refresh_room()
             sequence = int(content.get("sequence") or (self.room.current_question_number + 1))
             await self.db_action(start_question, sequence)
         elif action == "lock":
@@ -127,6 +135,8 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
             raise GameError("Unknown host action.")
         await self.refresh_room()
         await self.broadcast_now("host.action")
+        if action in {"start_question", "pause", "resume", "lock", "reveal"}:
+            await database_sync_to_async(broadcast_private_player_states)(self.room)
 
     async def handle_player_action(self, content):
         action = content.get("action")
@@ -136,6 +146,8 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
                 "locked": result.locked,
                 "selected": result.selected_option,
                 "attempts": result.attempts,
+                "question_id": result.game_question_id,
+                "question_number": result.game_question.sequence,
             }, "question_number": result.game_question.sequence})
         elif action == "lifeline":
             key, payload = await self.db_player_action(use_lifeline, content.get("lifeline"))

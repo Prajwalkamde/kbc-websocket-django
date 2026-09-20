@@ -42,6 +42,12 @@ def send_player_state(player_id, room):
     _send(player_group(player_id), "player_state_event", state_for_player(room, player))
 
 
+def broadcast_private_player_states(room):
+    """Push each player's private view so question-local answer state cannot leak."""
+    for player in room.players.all():
+        send_player_state(player.id, room)
+
+
 def broadcast_host_state(room):
     _send(host_group(room.room_code), "host_state_event", state_for_host(room))
 
@@ -60,10 +66,11 @@ def broadcast_host_delta(room, *, event="delta"):
     if event in {"player.answer", "player.lock"}:
         gq = _current_question(room)
         answers = list(Answer.objects.filter(game_question=gq)) if gq else []
+        selected = [a.selected_option for a in answers if a.selected_option]
         payload["answers"] = {
-            "submitted": sum(bool(a.attempts) for a in answers),
+            "submitted": len(selected),
             "locked": sum(bool(a.locked) for a in answers),
-            "distribution": {letter: sum(a.selected_option == letter for a in answers) for letter in "ABCD"},
+            "distribution": {letter: selected.count(letter) for letter in "ABCD"},
         }
     elif event == "fastest.submitted":
         ff = FastestFingerRound.objects.filter(room=room).first()

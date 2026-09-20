@@ -165,26 +165,60 @@
      ACTION RESPONSE
   ========================================================= */
 
+  function answerBelongsToCurrentQuestion(answer, s) {
+    if (!answer || !s?.question) return false;
+    if (answer.question_id != null) {
+      return Number(answer.question_id) === Number(s.question.id);
+    }
+    if (answer.question_number != null) {
+      return Number(answer.question_number) === Number(s.current_question);
+    }
+    return true;
+  }
+
+  function emptyAnswer(s) {
+    return {
+      attempts: [],
+      locked: false,
+      selected: null,
+      correct: null,
+      question_id: s?.question?.id ?? null,
+      question_number: s?.current_question ?? null
+    };
+  }
+
   function applyAction(action, result) {
     if (!state) return;
 
     if (action === "answer") {
 
-      state.my_answer =
-        state.my_answer || {
-          attempts: []
-        };
+      const resultQuestionId = result.question_id;
+      const resultQuestionNumber = result.question_number;
 
-      state.my_answer.attempts =
-        result.attempts || [];
-
-      state.my_answer.locked =
-        Boolean(result.locked);
-
-      if (result.locked) {
-        state.my_answer.correct =
-          result.correct;
+      if (
+        resultQuestionId != null &&
+        state.question?.id != null &&
+        Number(resultQuestionId) !== Number(state.question.id)
+      ) {
+        return;
       }
+
+      if (
+        resultQuestionNumber != null &&
+        state.current_question != null &&
+        Number(resultQuestionNumber) !== Number(state.current_question)
+      ) {
+        return;
+      }
+
+      state.my_answer = {
+        attempts: result.attempts || [],
+        locked: Boolean(result.locked),
+        selected: result.selected || null,
+        correct: result.correct ?? null,
+        question_id: resultQuestionId ?? state.question?.id ?? null,
+        question_number: resultQuestionNumber ?? state.current_question ?? null
+      };
 
       render(state);
     }
@@ -281,36 +315,35 @@
     const questionChanged =
       previousQuestion !== incomingQuestion;
 
-    /*
-     * Additional protection:
-     * If backend keeps the same question number but sends
-     * a different question object, treat it as new question.
-     */
     const previousQuestionId =
       state.question?.id ??
       state.question?.pk ??
+      state.question?.started_at ??
       state.question?.text ??
       null;
 
     const incomingQuestionId =
       s.question?.id ??
       s.question?.pk ??
+      s.question?.started_at ??
       s.question?.text ??
       null;
 
     const questionObjectChanged =
       previousQuestionId !== null &&
       incomingQuestionId !== null &&
-      previousQuestionId !== incomingQuestionId;
+      String(previousQuestionId) !== String(incomingQuestionId);
+
+    const becameActiveQuestion =
+      s.status === "QUESTION_ACTIVE" &&
+      state.status !== "QUESTION_ACTIVE" &&
+      state.status !== "PAUSED";
 
     const isNewQuestion =
       questionChanged ||
-      questionObjectChanged;
+      questionObjectChanged ||
+      becameActiveQuestion;
 
-    /*
-     * Fastest Finger local state should only survive
-     * while the same Fastest Finger round is active.
-     */
     const previousFastestPrompt =
       state.fastest?.prompt?.text || null;
 
@@ -322,66 +355,30 @@
       incomingFastestPrompt &&
       previousFastestPrompt !== incomingFastestPrompt;
 
+    const keepAnswer =
+      !isNewQuestion &&
+      answerBelongsToCurrentQuestion(state.my_answer, s);
+
     state = {
       ...state,
       ...s,
-
-      /*
-       * These are player-private values.
-       * Do not overwrite them with public room state.
-       */
       me: state.me,
-
-      /*
-       * QUESTION-SPECIFIC STATE
-       *
-       * New question => completely fresh answer state.
-       */
-      my_answer: isNewQuestion
-        ? null
-        : state.my_answer,
-
-      removed_options: isNewQuestion
-        ? []
-        : state.removed_options,
-
-      active_poll: isNewQuestion
-        ? null
-        : state.active_poll,
-
-      expert: isNewQuestion
-        ? null
-        : state.expert,
-
-      expert_incoming: isNewQuestion
-        ? null
-        : state.expert_incoming,
-
-      /*
-       * FASTEST FINGER
-       */
+      my_answer: keepAnswer ? state.my_answer : emptyAnswer(s),
+      removed_options: isNewQuestion ? [] : (state.removed_options || []),
+      active_poll: isNewQuestion ? null : state.active_poll,
+      expert: isNewQuestion ? null : state.expert,
+      expert_incoming: isNewQuestion ? null : state.expert_incoming,
       fastest: fastestRoundChanged
-        ? {
-            ...(s.fastest || {})
-          }
-        : {
-            ...(state.fastest || {}),
-            ...(s.fastest || {})
-          }
+        ? { ...(s.fastest || {}) }
+        : { ...(state.fastest || {}), ...(s.fastest || {}) }
     };
 
-    /*
-     * If the room moved out of QUESTION_ACTIVE,
-     * old answer selection should not remain active.
-     */
-    if (s.status !== "QUESTION_ACTIVE") {
-      if (
-        s.status === "FASTEST_FINGER" ||
-        s.status === "LOBBY"
-      ) {
-        state.my_answer = null;
-        state.removed_options = [];
-      }
+    if (
+      s.status === "FASTEST_FINGER" ||
+      s.status === "LOBBY"
+    ) {
+      state.my_answer = emptyAnswer(s);
+      state.removed_options = [];
     }
 
     render(state);
@@ -396,10 +393,13 @@
 
     /*
      * Private state is authoritative.
-     * This is especially important after reconnect.
+     * Drop any answer that does not belong to the current question.
      */
-    state = s;
+    if (s.question && !answerBelongsToCurrentQuestion(s.my_answer, s)) {
+      s = { ...s, my_answer: emptyAnswer(s) };
+    }
 
+    state = s;
     render(state);
   }
 
@@ -436,19 +436,27 @@
       $("question").textContent =
         s.question.text;
 
+      if (!answerBelongsToCurrentQuestion(s.my_answer, s)) {
+        s.my_answer = emptyAnswer(s);
+      }
+      const myAnswer = s.my_answer;
+
       const attempts =
-        s.my_answer?.attempts || [];
+        myAnswer.attempts || [];
 
       const locked =
-        Boolean(s.my_answer?.locked);
+        Boolean(myAnswer.locked);
 
       const revealed =
         Boolean(s.question.correct_option);
 
       const wrong =
         revealed &&
-        s.my_answer?.selected &&
-        s.my_answer?.correct === false;
+        myAnswer.selected &&
+        myAnswer.correct === false;
+
+      const boundQuestionId = s.question.id;
+      const boundQuestionNumber = s.current_question;
 
       $("player-options").innerHTML =
         Object.entries(
@@ -466,11 +474,11 @@
               ? (
                   revealed
                     ? (
-                        s.my_answer?.correct
+                        myAnswer.correct
                           ? "selected-correct"
                           : (
                               wrong &&
-                              s.my_answer?.selected === k
+                              myAnswer.selected === k
                                 ? "selected-wrong"
                                 : "selected"
                             )
@@ -495,10 +503,7 @@
         })
         .join("");
 
-      /*
-       * Option click
-       */
-      document
+      $("player-options")
         .querySelectorAll("[data-option]")
         .forEach(button => {
 
@@ -511,10 +516,14 @@
               return;
             }
 
-            /*
-             * Immediately update UI.
-             */
-            document
+            if (
+              state.question?.id !== boundQuestionId ||
+              Number(state.current_question) !== Number(boundQuestionNumber)
+            ) {
+              return;
+            }
+
+            $("player-options")
               .querySelectorAll("[data-option]")
               .forEach(o =>
                 o.classList.remove("selected")
@@ -522,9 +531,6 @@
 
             button.classList.add("selected");
 
-            /*
-             * Send answer.
-             */
             send("answer", {
               option: button.dataset.option
             });
@@ -543,7 +549,7 @@
         $("result").classList.remove("hidden");
 
         const ok =
-          s.my_answer?.selected ===
+          myAnswer.selected ===
           s.question.correct_option;
 
         $("result").innerHTML =
@@ -582,11 +588,7 @@
     renderPoll(s);
     renderExpert(s);
 
-    startTimer(
-      s.status === "QUESTION_ACTIVE"
-        ? s.deadline
-        : null
-    );
+    startTimer(s);
 
     renderFastest(
       s.fastest,
@@ -984,33 +986,38 @@
      TIMER
   ========================================================= */
 
-  function startTimer(deadline) {
+  function startTimer(s) {
 
     clearInterval(timerHandle);
 
-    if (!deadline) {
+    const el = $("player-timer");
+    if (!el) return;
 
-      $("player-timer").textContent =
-        "—";
+    const status = s?.status;
+    el.classList.toggle("paused", status === "PAUSED");
 
+    if (status === "PAUSED") {
+      const remaining = s.paused_remaining_seconds;
+      el.textContent = remaining == null
+        ? "PAUSED"
+        : String(Math.max(0, Number(remaining)));
       return;
     }
 
-    timerHandle =
-      setInterval(() => {
+    if (status !== "QUESTION_ACTIVE" || !s.deadline) {
+      el.textContent = "—";
+      return;
+    }
 
-        $("player-timer").textContent =
-          Math.max(
-            0,
-            Math.ceil(
-              (
-                new Date(deadline) -
-                Date.now()
-              ) / 1000
-            )
-          );
+    const tick = () => {
+      el.textContent = Math.max(
+        0,
+        Math.ceil((new Date(s.deadline) - Date.now()) / 1000)
+      );
+    };
 
-      }, 200);
+    tick();
+    timerHandle = setInterval(tick, 200);
   }
 
   /* =========================================================

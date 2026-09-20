@@ -144,10 +144,11 @@ def state_for_host(room):
     gq = _current_question(room)
     if gq:
         answers = list(Answer.objects.filter(game_question=gq).only("selected_option", "attempts", "locked"))
+        selected = [a.selected_option for a in answers if a.selected_option]
         state["answers"] = {
-            "submitted": sum(bool(a.attempts) for a in answers),
+            "submitted": len(selected),
             "locked": sum(bool(a.locked) for a in answers),
-            "distribution": {letter: sum(a.selected_option == letter for a in answers if a.locked) for letter in "ABCD"},
+            "distribution": {letter: selected.count(letter) for letter in "ABCD"},
         }
     else:
         state["answers"] = {"submitted": 0, "locked": 0, "distribution": {letter: 0 for letter in "ABCD"}}
@@ -179,6 +180,8 @@ def state_for_player(room, player):
             # A player must not learn whether their answer is correct until the
             # host reveals the question to the room.
             "correct": answer.is_correct if answer and reveal else None,
+            "question_id": gq.id,
+            "question_number": gq.sequence,
         }
         latest_5050 = LifelineUse.objects.filter(
             player=player, game_question=gq, lifeline="50_50"
