@@ -28,18 +28,7 @@
     }, 3200);
   }
 
-  function escapeHtml(s) {
-    return String(s ?? "").replace(
-      /[&<>"']/g,
-      m => ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#039;"
-      }[m])
-    );
-  }
+
 
   /* =========================================================
      WEBSOCKET
@@ -458,7 +447,8 @@
       const boundQuestionId = s.question.id;
       const boundQuestionNumber = s.current_question;
 
-      $("player-options").innerHTML =
+      KBCDom.render(
+        $("player-options"),
         Object.entries(
           s.question.options || {}
         )
@@ -490,24 +480,21 @@
           const removed =
             s.removed_options?.includes(k);
 
-          return `
-            <button
-              class="option ${selectedClass} ${removed ? "removed" : ""}"
-              data-option="${k}"
-              ${disabled || removed ? "disabled" : ""}
-            >
-              <b>${k}.</b>
-              ${escapeHtml(v)}
-            </button>
-          `;
-        })
-        .join("");
+          const button = KBCDom.el(
+            "button",
+            {
+              class: `option ${selectedClass} ${removed ? "removed" : ""}`.trim(),
+              dataset: { option: k },
+              disabled: Boolean(disabled || removed)
+            },
+            [
+              KBCDom.el("b", { text: `${k}.` }),
+              " ",
+              v
+            ]
+          );
 
-      $("player-options")
-        .querySelectorAll("[data-option]")
-        .forEach(button => {
-
-          button.onclick = () => {
+          button.addEventListener("click", () => {
 
             if (
               button.disabled ||
@@ -534,8 +521,11 @@
             send("answer", {
               option: button.dataset.option
             });
-          };
-        });
+          });
+
+          return button;
+        })
+      );
 
       renderLifelines(
         s.me?.lifelines || {}
@@ -552,15 +542,11 @@
           myAnswer.selected ===
           s.question.correct_option;
 
-        $("result").innerHTML =
-          `
-            <b>
-              ${ok ? "✅ CORRECT" : "❌ WRONG"}
-            </b>
-            —
-            Correct answer:
-            ${s.question.correct_option}
-          `;
+        KBCDom.render($("result"), [
+          KBCDom.el("b", { text: ok ? "✅ CORRECT" : "❌ WRONG" }),
+          " — Correct answer: ",
+          String(s.question.correct_option)
+        ]);
 
       } else {
 
@@ -573,7 +559,7 @@
        * No question currently.
        */
       if ($("player-options")) {
-        $("player-options").innerHTML = "";
+        KBCDom.clear($("player-options"));
       }
 
       if ($("result")) {
@@ -628,59 +614,31 @@
     const panel =
       $("final-results");
 
-    if (!panel) return;
+    const body =
+      $("final-results-body");
+
+    if (!panel || !body) return;
 
     if (!rows?.length) {
       panel.classList.add("hidden");
+      KBCDom.clear(body);
       return;
     }
 
     panel.classList.remove("hidden");
 
-    $("final-results-body").innerHTML =
-      `
-      <table class="results-table">
-        <thead>
-          <tr>
-            <th>Player</th>
-            <th>Score</th>
-            <th>Correct Questions</th>
-            <th>Wrong Questions</th>
-            <th>Total Time</th>
-          </tr>
-        </thead>
-
-        <tbody>
-          ${rows.map(x => `
-            <tr>
-              <td>${escapeHtml(x.name)}</td>
-              <td>${money(x.score)}</td>
-
-              <td>
-                ${
-                  x.correct?.length
-                    ? x.correct.join(", ")
-                    : "None"
-                }
-              </td>
-
-              <td>
-                ${
-                  x.wrong?.length
-                    ? x.wrong.join(", ")
-                    : "None"
-                }
-              </td>
-
-              <td>
-                ${(Number(x.time_ms || 0) / 1000).toFixed(2)}
-                s
-              </td>
-            </tr>
-          `).join("")}
-        </tbody>
-      </table>
-      `;
+    KBCDom.render(body, [
+      KBCDom.table(
+        ["Player", "Score", "Correct Questions", "Wrong Questions", "Total Time"],
+        rows.map(x => [
+          x.name,
+          money(x.score),
+          x.correct?.length ? x.correct.join(", ") : "None",
+          x.wrong?.length ? x.wrong.join(", ") : "None",
+          `${(Number(x.time_ms || 0) / 1000).toFixed(2)} s`
+        ])
+      )
+    ]);
   }
 
   /* =========================================================
@@ -690,79 +648,79 @@
   function renderPoll(s) {
 
     const p = s.active_poll;
+    const box = $("poll-box");
+
+    if (!box) return;
 
     if (!p) {
-      $("poll-box").classList.add("hidden");
+      box.classList.add("hidden");
       return;
     }
 
-    $("poll-box").classList.remove("hidden");
+    box.classList.remove("hidden");
 
-    if (p.requester && p.completed) {
+    if (
+      p.requester &&
+      p.completed
+    ) {
 
-      $("poll-box").innerHTML =
-        `
-        <b>Audience Poll Result</b>
+      KBCDom.render(box, [
+        KBCDom.el("b", { text: "Audience Poll Result" }),
 
-        <div class="stats">
-          ${
-            "ABCD"
-              .split("")
-              .map(x => `
-                <div class="stat">
-                  <b>${x}</b>
-                  <br>
-                  ${p.percentages?.[x] || 0}%
-                </div>
-              `)
-              .join("")
-          }
-        </div>
-        `;
+        KBCDom.el(
+          "div",
+          { class: "stats" },
+          "ABCD".split("").map(x =>
+            KBCDom.el("div", { class: "stat" }, [
+              KBCDom.el("b", { text: x }),
+              KBCDom.el("br"),
+              `${Number(p.percentages?.[x] || 0)}%`
+            ])
+          )
+        )
+      ]);
 
-    } else {
+    }
 
-      $("poll-box").innerHTML =
-        p.can_vote
-          ? `
-            <b>Audience Poll</b>
+    else if (p.can_vote) {
 
-            <p>
-              ${escapeHtml(
-                p.requester_name ||
-                "Another player"
-              )}
-              needs your vote.
-            </p>
+      KBCDom.render(box, [
+        KBCDom.el("b", { text: "Audience Poll" }),
 
-            <div class="options-grid">
-              ${
-                "ABCD"
-                  .split("")
-                  .map(x => `
-                    <button
-                      class="btn"
-                      onclick="window.votePoll(${p.id}, '${x}')"
-                    >
-                      ${x}
-                    </button>
-                  `)
-                  .join("")
-              }
-            </div>
-          `
-          : `
-            <b>Audience Poll active</b>
-            <p>Waiting for other players…</p>
-          `;
+        KBCDom.el("p", {
+          text: `${p.requester_name || "Another player"} needs your vote.`
+        }),
+
+        KBCDom.el(
+          "div",
+          { class: "options-grid" },
+          "ABCD".split("").map(x => {
+
+            const button =
+              KBCDom.el("button", { class: "btn", text: x });
+
+            button.addEventListener("click", () =>
+              send("audience_vote", {
+                poll_id: p.id,
+                option: x
+              })
+            );
+
+            return button;
+          })
+        )
+      ]);
+
+    }
+
+    else {
+
+      KBCDom.render(box, [
+        KBCDom.el("b", { text: "Audience Poll active" }),
+        KBCDom.el("p", { text: "Waiting for other players…" })
+      ]);
     }
   }
-
-  window.votePoll = (id, option) =>
-    send("audience_vote", {
-      poll_id: id,
-      option
-    });
 
   /* =========================================================
      EXPERT
@@ -770,87 +728,82 @@
 
   function renderExpert(s) {
 
+    const box = $("expert-box");
+
+    if (!box) return;
+
     if (
       s.expert &&
       !s.expert.answered
     ) {
 
-      $("expert-box").classList.remove("hidden");
+      box.classList.remove("hidden");
 
-      $("expert-box").innerHTML =
-        `
-        <b>Expert selected:</b>
-        ${escapeHtml(s.expert.expert_name)}
-        <br>
-        Waiting for their answer…
-        `;
+      KBCDom.render(box, [
+        KBCDom.el("b", { text: "Expert selected:" }),
+        " ",
+        s.expert.expert_name,
+        KBCDom.el("br"),
+        "Waiting for their answer…"
+      ]);
 
+      return;
     }
 
-    else if (s.expert?.answer) {
+    if (s.expert?.answer) {
 
-      $("expert-box").classList.remove("hidden");
+      box.classList.remove("hidden");
 
-      $("expert-box").innerHTML =
-        `
-        <b>
-          ${escapeHtml(
-            s.expert.expert_name
-          )}
-          answered:
-        </b>
-        ${s.expert.answer}
-        `;
+      KBCDom.render(box, [
+        KBCDom.el("b", {
+          text: `${s.expert.expert_name} answered:`
+        }),
+        " ",
+        s.expert.answer
+      ]);
 
+      return;
     }
 
-    else if (
+    if (
       s.expert_incoming &&
       !s.expert_incoming.answered
     ) {
 
-      $("expert-box").classList.remove("hidden");
+      box.classList.remove("hidden");
 
-      $("expert-box").innerHTML =
-        `
-        <b>You are the Expert</b>
+      KBCDom.render(box, [
+        KBCDom.el("b", { text: "You are the Expert" }),
 
-        <p>
-          ${escapeHtml(
-            s.expert_incoming.question.text
-          )}
-        </p>
+        KBCDom.el("p", {
+          text: s.expert_incoming.question?.text || ""
+        }),
 
-        <div class="options-grid">
-          ${
-            "ABCD"
-              .split("")
-              .map(x => `
-                <button
-                  class="btn"
-                  onclick="window.expert(${s.expert_incoming.request_id}, '${x}')"
-                >
-                  ${x}
-                </button>
-              `)
-              .join("")
-          }
-        </div>
-        `;
+        KBCDom.el(
+          "div",
+          { class: "options-grid" },
+          "ABCD".split("").map(x => {
 
+            const button =
+              KBCDom.el("button", { class: "btn", text: x });
+
+            button.addEventListener("click", () =>
+              send("expert_answer", {
+                request_id: s.expert_incoming.request_id,
+                option: x
+              })
+            );
+
+            return button;
+          })
+        )
+      ]);
+
+      return;
     }
 
-    else {
-
-      $("expert-box").classList.add("hidden");
-    }
+    box.classList.add("hidden");
   }
-
-  window.expert = (id, option) =>
-    send("expert_answer", {
-      request_id: id,
-      option
-    });
 
   /* =========================================================
      FASTEST FINGER
@@ -887,7 +840,8 @@
         ff.submitted_answer || []
       );
 
-    $("ff-items").innerHTML =
+    KBCDom.render(
+      $("ff-items"),
       (ff.prompt.options || [])
         .map((option, index) => {
 
@@ -905,81 +859,56 @@
                 )
               : "";
 
-          return `
-            <button
-              class="fastest-choice ${resultClass}"
-              data-fastest-option="${index}"
-              ${
-                ff.locked ||
-                ff.submitted
-                  ? "disabled"
-                  : ""
-              }
-            >
-              <b>${index + 1}.</b>
-              ${option.map(escapeHtml).join(" → ")}
-            </button>
-          `;
-        })
-        .join("");
-
-    $("ff-submit").disabled = true;
-
-    $("ff-submit").textContent =
-      ff.locked || ff.submitted
-        ? "Answer Locked"
-        : "Choose an Order Above";
-
-    /*
-     * Fastest Finger option click
-     */
-    $("ff-items")
-      .querySelectorAll(
-        "[data-fastest-option]"
-      )
-      .forEach(button => {
-
-        button.onclick = () => {
-
-          if (
-            ff.locked ||
-            ff.submitted
-          ) {
-            return;
-          }
-
-          const selectedIndex =
-            Number(
-              button.dataset.fastestOption
-            );
-
-          const answer =
-            ff.prompt.options[
-              selectedIndex
-            ];
-
-          /*
-           * Visual selection
-           */
-          $("ff-items")
-            .querySelectorAll(
-              "[data-fastest-option]"
-            )
-            .forEach(b =>
-              b.classList.remove(
-                "selected"
-              )
-            );
-
-          button.classList.add(
-            "selected"
+          const button = KBCDom.el(
+            "button",
+            {
+              class: `fastest-choice ${resultClass}`.trim(),
+              dataset: { fastestOption: String(index) },
+              disabled: Boolean(ff.locked || ff.submitted)
+            },
+            [
+              KBCDom.el("b", { text: `${index + 1}.` }),
+              " ",
+              (option || []).join(" → ")
+            ]
           );
 
-          send("fastest_submit", {
-            answer
+          button.addEventListener("click", () => {
+
+            if (
+              ff.locked ||
+              ff.submitted
+            ) {
+              return;
+            }
+
+            const answer =
+              ff.prompt.options[
+                Number(button.dataset.fastestOption)
+              ];
+
+            $("ff-items")
+              .querySelectorAll(
+                "[data-fastest-option]"
+              )
+              .forEach(b =>
+                b.classList.remove(
+                  "selected"
+                )
+              );
+
+            button.classList.add(
+              "selected"
+            );
+
+            send("fastest_submit", {
+              answer
+            });
           });
-        };
-      });
+
+          return button;
+        })
+    );
   }
 
   /* =========================================================
@@ -1051,81 +980,3 @@
   connect();
 
 })();
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-// (function(){
-//   const code=window.ROOM_CODE;const session=localStorage.getItem("player_session")||"";
-//   let socket=null,reconnectTimer=null,fallbackTimer=null,timerHandle=null,state=null;
-//   const $=id=>document.getElementById(id);const money=n=>"₹"+Number(n||0).toLocaleString("en-IN");
-//   const wsUrl=()=>`${location.protocol==="https:"?"wss":"ws"}://${location.host}/ws/rooms/${code}/`;
-//   function show(msg){$("player-message").textContent=msg;$("player-message").classList.remove("hidden");setTimeout(()=>$("player-message").classList.add("hidden"),3200)}
-//   function escapeHtml(s){return String(s??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
-//   function connect(){
-//     if(!code||!session)return show("Player session missing. Please join again.");
-//     clearTimeout(reconnectTimer);try{socket?.close()}catch(_){ }
-//     socket=new WebSocket(wsUrl());
-//     socket.onopen=()=>{socket.send(JSON.stringify({type:"auth",role:"player",token:session}));clearInterval(fallbackTimer)};
-//     socket.onmessage=e=>{try{const m=JSON.parse(e.data);if(m.type==="authenticated"||m.type==="player.private")applyState(m.state);else if(m.type==="room.state")applyPublic(m.state);else if(m.type==="action.ok")applyAction(m.action,m.result);else if(m.type==="error"||m.type==="auth_error")show(m.error)}catch(_){}};
-//     socket.onclose=()=>{fallbackFetch();reconnectTimer=setTimeout(connect,2000)};
-//     socket.onerror=()=>{try{socket.close()}catch(_){}};
-//   }
-//   function send(action,body={}){if(!socket||socket.readyState!==WebSocket.OPEN){show("Reconnecting…");return}socket.send(JSON.stringify({type:"action",action,...body}))}
-//   async function fallbackFetch(){try{const r=await fetch(`/api/rooms/${code}/state/`,{headers:{"X-Player-Session":session}}),d=await r.json();if(d.ok)applyState(d.state)}catch(_){ }clearInterval(fallbackTimer);fallbackTimer=setInterval(fallbackFetch,5000)}
-
-//   function applyAction(action,result){
-//     if(!state)return;
-//     if(action==="answer"){
-//       state.my_answer=state.my_answer||{attempts:[]};
-//       state.my_answer.attempts=result.attempts||state.my_answer.attempts;
-//       state.my_answer.locked=Boolean(result.locked);
-//       if(result.locked)state.my_answer.correct=result.correct;
-//       render(state);
-//     }else if(action==="fastest_submit"){
-//       state.fastest=state.fastest||{};state.fastest.submitted=true;state.fastest.submitted_correct=result.correct;render(state);
-//     }else if(action==="lifeline"){
-//       state.me=state.me||{lifelines:{}};state.me.lifelines=state.me.lifelines||{};state.me.lifelines[result.lifeline]=false;
-//       if(result.payload?.removed)state.removed_options=result.payload.removed;
-//       if(result.payload?.question)state.question=result.payload.question;
-//       render(state);
-//     }else if(action==="audience_vote"){
-//       if(state.active_poll)state.active_poll.can_vote=false;render(state);
-//     }else if(action==="expert_answer"){
-//       if(state.expert_incoming)state.expert_incoming.answered=true;render(state);
-//     }
-//   }
-//   function applyPublic(s){if(!state)state=s;else state={...state,...s,me:state.me,my_answer:state.my_answer,removed_options:state.removed_options,active_poll:state.active_poll,expert:state.expert,expert_incoming:state.expert_incoming,fastest:{...(state.fastest||{}),...(s.fastest||{})}};render(state)}
-//   function applyState(s){state=s;render(s)}
-//   function render(s){
-//     $("my-name").textContent=s.me?.name||"";$("my-prize").textContent=money(s.me?.prize);$("q-num").textContent=`${s.current_question||0} / ${s.total_questions}`;
-//     if(s.question){$("category").textContent=`${s.question.category} · ${s.question.difficulty}`;$("question").textContent=s.question.text;const attempts=s.my_answer?.attempts||[],locked=s.my_answer?.locked,revealed=Boolean(s.question.correct_option),wrong=revealed&&s.my_answer?.selected&&s.my_answer?.correct===false;
-//       $("player-options").innerHTML=Object.entries(s.question.options).map(([k,v])=>{const disabled=locked||attempts.includes(k)||s.status!=="QUESTION_ACTIVE";const selectedClass=attempts.includes(k)?(revealed?(s.my_answer.correct?"selected-correct":(wrong&&s.my_answer.selected===k?"selected-wrong":"selected")):"selected"):"";const removed=s.removed_options?.includes(k);return `<button class="option ${selectedClass} ${removed?"removed":""}" data-option="${k}" ${disabled||removed?"disabled":""}><b>${k}.</b> ${escapeHtml(v)}</button>`}).join("");
-//       document.querySelectorAll("[data-option]").forEach(b=>b.onclick=()=>{document.querySelectorAll("[data-option]").forEach(o=>o.classList.remove("selected"));b.classList.add("selected");send("answer",{option:b.dataset.option})});
-//       renderLifelines(s.me?.lifelines||{});
-//       if(s.question.correct_option){$("result").classList.remove("hidden");const ok=s.my_answer?.selected===s.question.correct_option;$("result").innerHTML=`<b>${ok?"✅ CORRECT":"❌ WRONG"}</b> — Correct answer: ${s.question.correct_option}`}else $("result").classList.add("hidden");
-//     }
-//     renderFinalResults(s.final_results);renderPoll(s);renderExpert(s);startTimer(s.status==="QUESTION_ACTIVE"?s.deadline:null);renderFastest(s.fastest,s.status);
-//   }
-//   function renderLifelines(l){document.querySelectorAll(".life").forEach(b=>b.classList.toggle("used",l[b.dataset.life]===false))}
-//   function renderFinalResults(rows){const panel=$("final-results");if(!rows?.length){panel.classList.add("hidden");return}panel.classList.remove("hidden");$("final-results-body").innerHTML=`<table class="results-table"><thead><tr><th>Player</th><th>Score</th><th>Correct Questions</th><th>Wrong Questions</th><th>Total Time</th></tr></thead><tbody>${rows.map(x=>`<tr><td>${escapeHtml(x.name)}</td><td>${money(x.score)}</td><td>${x.correct.length?x.correct.join(", "):"None"}</td><td>${x.wrong.length?x.wrong.join(", "):"None"}</td><td>${(x.time_ms/1000).toFixed(2)} s</td></tr>`).join("")}</tbody></table>`}
-//   function renderPoll(s){const p=s.active_poll;if(!p){$("poll-box").classList.add("hidden");return}$("poll-box").classList.remove("hidden");if(p.requester&&p.completed){$("poll-box").innerHTML=`<b>Audience Poll Result</b><div class="stats">${"ABCD".split("").map(x=>`<div class="stat"><b>${x}</b><br>${p.percentages?.[x]||0}%</div>`).join("")}</div>`}else{$("poll-box").innerHTML=p.can_vote?`<b>Audience Poll</b><p>${escapeHtml(p.requester_name||"Another player")} needs your vote.</p><div class="options-grid">${"ABCD".split("").map(x=>`<button class="btn" onclick="window.votePoll(${p.id},'${x}')">${x}</button>`).join("")}</div>`:`<b>Audience Poll active</b><p>Waiting for other players…</p>`}}
-//   window.votePoll=(id,option)=>send("audience_vote",{poll_id:id,option});
-//   function renderExpert(s){if(s.expert&&!s.expert.answered){$("expert-box").classList.remove("hidden");$("expert-box").innerHTML=`<b>Expert selected:</b> ${escapeHtml(s.expert.expert_name)}<br>Waiting for their answer…`}else if(s.expert?.answer){$("expert-box").classList.remove("hidden");$("expert-box").innerHTML=`<b>${escapeHtml(s.expert.expert_name)} answered:</b> ${s.expert.answer}`}else if(s.expert_incoming&&!s.expert_incoming.answered){$("expert-box").classList.remove("hidden");$("expert-box").innerHTML=`<b>You are the Expert</b><p>${escapeHtml(s.expert_incoming.question.text)}</p><div class="options-grid">${"ABCD".split("").map(x=>`<button class="btn" onclick="window.expert(${s.expert_incoming.request_id},'${x}')">${x}</button>`).join("")}</div>`}else $("expert-box").classList.add("hidden")}
-//   window.expert=(id,option)=>send("expert_answer",{request_id:id,option});
-//   function renderFastest(ff,status){const visible=ff?.started;$("fastest").classList.toggle("hidden",!visible);if(!visible)return;$("ff-text").textContent=ff.prompt.text;const submittedAnswer=JSON.stringify(ff.submitted_answer||[]);$("ff-items").innerHTML=(ff.prompt.options||[]).map((option,index)=>{const selected=ff.submitted&&JSON.stringify(option)===submittedAnswer;const resultClass=selected?(ff.submitted_correct?"submitted":"submitted-wrong"):"";return `<button class="fastest-choice ${resultClass}" data-fastest-option="${index}" ${ff.locked||ff.submitted?"disabled":""}><b>${index+1}.</b> ${option.map(escapeHtml).join(" → ")}</button>`}).join("");$("ff-submit").disabled=true;$("ff-submit").textContent=ff.locked||ff.submitted?"Answer Locked":"Choose an Order Above";$("ff-items").querySelectorAll("[data-fastest-option]").forEach(button=>button.onclick=()=>{if(ff.locked||ff.submitted)return;send("fastest_submit",{answer:ff.prompt.options[Number(button.dataset.fastestOption)]})})}
-//   function startTimer(deadline){clearInterval(timerHandle);if(!deadline){$("player-timer").textContent="—";return}timerHandle=setInterval(()=>{$("player-timer").textContent=Math.max(0,Math.ceil((new Date(deadline)-Date.now())/1000))},200)}
-//   document.querySelectorAll(".life").forEach(b=>b.onclick=()=>{if(!b.classList.contains("used"))send("lifeline",{lifeline:b.dataset.life})});
-//   connect();
-// })();

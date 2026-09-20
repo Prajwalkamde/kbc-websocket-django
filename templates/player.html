@@ -40,7 +40,9 @@
   </section>
 </main>
 <script>
-window.ROOM_CODE="{{ room_code }}";
+/* escapejs keeps the room code from breaking out of this string literal. */
+window.ROOM_CODE="{{ room_code|escapejs }}";
 </script>
+<script src="{% static 'js/dom.js' %}"></script>
 <script src="{% static 'js/player.js' %}"></script>
 {% endblock %}

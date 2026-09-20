@@ -1,17 +1,15 @@
 import math
 import random
 import string
-import uuid
 from django.db import transaction
 from django.utils import timezone
 
 from .constants import (
-    DEFAULT_LIFELINES, DIFFICULTY_BY_SEQUENCE, FASTEST_FINGER_BONUS,
-    FASTEST_FINGER_OTHERS, FASTEST_PROMPT, FASTEST_PROMPTS, PRIZE_LADDER,
-    QUESTION_TIMERS, SAFE_LEVELS,
+    DEFAULT_LIFELINES, DIFFICULTY_BY_SEQUENCE, FASTEST_PROMPTS,
+    QUESTION_TIMERS,
 )
 from .models import (
-    Answer, AudiencePoll, AudienceVote, ExpertRequest, FastestFingerRound,
+    Answer, AudiencePoll, AudienceVote, FastestFingerRound,
     FastestFingerSubmission, GameQuestion, GameRoom, LifelineUse, Player, Question,
 )
 
@@ -309,6 +307,11 @@ def start_question(room, sequence):
     gq.locked_at = None
     gq.revealed_at = None
     gq.save(update_fields=["started_at", "locked_at", "revealed_at"])
+
+    # Local import avoids a circular import: game.tasks imports this module.
+    from .tasks import schedule_deadline_lock
+
+    schedule_deadline_lock(room, sequence)
     return gq
 
 

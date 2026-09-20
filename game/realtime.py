@@ -2,7 +2,7 @@ from asgiref.sync import async_to_sync
 from channels.layers import get_channel_layer
 
 from .game import public_room_state, state_for_host, state_for_player
-from .models import GameRoom, Player
+from .models import Player
 
 
 def room_group(room_code):

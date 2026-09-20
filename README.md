@@ -35,6 +35,29 @@ The game remains server-authoritative. Scores, answers, timers and lifelines are
 - Added Docker Compose for local PostgreSQL + Redis + Django/Channels + Celery worker + Celery beat.
 - Added a WebSocket load-test script for 150–200 persistent clients.
 
+## Latest hardening pass
+
+- Host and player views no longer build markup with `innerHTML`. Every dynamic
+  value (player names, question text, categories, explanations, poll results)
+  is written through `textContent` / `setAttribute` with the shared helpers in
+  `static/js/dom.js`, so server or player supplied text can never be parsed as
+  HTML. Click handlers are attached with `addEventListener` instead of inline
+  `onclick` strings.
+- The commented-out legacy copies of `host.js` / `player.js` were removed, and
+  `escapeHtml` is gone because escaping is no longer the defence — the DOM API
+  is.
+- Room codes in `/host/<code>/` and `/play/<code>/` are validated against
+  `^[A-Z0-9]{6}$` before rendering, and the value is written into the page with
+  Django's `escapejs` filter, so a crafted URL cannot break out of the script
+  tag.
+- Question deadlines are now enforced by two cooperating Celery jobs: an ETA
+  task queued per question (`CELERY_DEADLINE_TASKS=True`) plus the one-second
+  beat safety net. Both re-read the room, so late or duplicated deliveries are
+  harmless.
+- `tools/ws_load_test.py` reports join/connect latency percentiles, survives
+  individual client failures, optionally simulates answers, and can run for a
+  fixed duration.
+
 ## Local setup — recommended
 
 Install Docker Desktop, then from the project root:
@@ -83,6 +106,25 @@ python tools/ws_load_test.py --url http://127.0.0.1:8000 --room ABC123 --players
 
 Keep the terminal running while the host starts questions. This tests the important part of the new architecture: hundreds of persistent WebSocket connections without hundreds of HTTP polling requests per second.
 
+The script also accepts:
+
+```text
+--join-concurrency 25   parallel /api/rooms/join/ requests (keeps the fan-out bounded)
+--answer-chance 0.9     simulate players answering each question
+--answer-delay 2        max simulated thinking time before an answer
+--duration 90           stop automatically after N seconds
+--json                  machine-readable summary
+```
+
+For example, 200 players that answer every question for 90 seconds:
+
+```bash
+python tools/ws_load_test.py --room ABC123 --players 200 --answer-chance 0.9 --duration 90
+```
+
+The summary reports join and WebSocket-connect latency (median and p95),
+events received, answers submitted and failures.
+
 ## Non-Docker local setup
 
 You need PostgreSQL and Redis running locally.
@@ -128,6 +170,19 @@ and:
 celery -A config beat -l INFO
 ```
 
+### Question deadline tasks
+
+Celery beat locks expired questions once per second, which is enough on its
+own. For tighter deadlines you can additionally queue one ETA task per question
+that fires exactly at the deadline:
+
+```text
+CELERY_DEADLINE_TASKS=True
+```
+
+The web container in `docker-compose.yml` enables this by default. Leave it off
+when no broker is reachable — the beat safety net keeps working either way.
+
 ## Production deployment
 
 For a serious deployment, use:
@@ -157,6 +212,11 @@ For 150 players this changes the workload from roughly hundreds of repeated HTTP
 
 ## Security notes
 
+- No `innerHTML` anywhere in the client code: dynamic text is inserted with DOM
+  APIs (`static/js/dom.js`), and event handlers are bound with
+  `addEventListener`.
+- Room codes are validated server-side before they are rendered or interpolated
+  into a script tag.
 - WebSocket authentication uses a short-lived-in-practice room/player session token sent as the first WebSocket message, not in the URL.
 - Host WebSocket connections still require the authenticated Django superuser session.
 - Active player state does not contain the correct answer until reveal.
@@ -185,6 +245,7 @@ kbc_office_final/
 │   ├── game.py
 │   └── migrations/
 ├── static/js/
+│   ├── dom.js
 │   ├── host.js
 │   └── player.js
 ├── templates/
