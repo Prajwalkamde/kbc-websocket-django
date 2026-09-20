@@ -23,6 +23,7 @@
   let soundOn = true;
   let audioContext = null;
   let previousStatus = "";
+  let lastState = null;
 
   /*
    * Prevent accidental double-clicks.
@@ -276,6 +277,7 @@
           m.type === "authenticated"
         ) {
 
+          actionInProgress = false;
           render(m.state);
         }
 
@@ -293,30 +295,19 @@
           m.type === "auth_error"
         ) {
 
+          actionInProgress = false;
+
+          const btn = document.querySelector(
+            '[data-action="start_fastest"]'
+          );
+
+          if (btn && btn.disabled) {
+            btn.disabled = false;
+            btn.textContent = "Start Fastest Finger";
+          }
+
           show(m.error);
         }
-        else if (
-    m.type === "error" ||
-    m.type === "auth_error"
-) {
-    actionInProgress = false;
-
-    const btn = document.querySelector(
-        '[data-action="start_fastest"]'
-    );
-
-    if (btn) {
-        btn.disabled = false;
-        btn.textContent = "Start Fastest Finger";
-    }
-
-    show(m.error);
-}
-
-{
-    actionInProgress = false;
-    show(m.error);
-}
 
       } catch (err) {
 
@@ -732,32 +723,78 @@
      DELTA
   ========================================================= */
 
+  function renderAnswerStats(data) {
+
+    const panel = $("answer-stats");
+    if (!panel) return;
+
+    const questionLive = [
+      "QUESTION_ACTIVE",
+      "PAUSED",
+      "ANSWER_LOCKED",
+      "REVEAL"
+    ].includes(data.status);
+
+    if (!data.question || !questionLive) {
+      panel.classList.add("hidden");
+      panel.innerHTML = "";
+      return;
+    }
+
+    const distribution =
+      data.answers?.distribution || {
+        A: 0, B: 0, C: 0, D: 0
+      };
+
+    const submitted =
+      Number(data.answers?.submitted || 0);
+
+    const total =
+      Number(data.players?.length || data.player_count || 0);
+
+    panel.classList.remove("hidden");
+    panel.innerHTML =
+      `
+        <div class="answer-summary">
+          Answered ${submitted} / ${total}
+        </div>
+        ${"ABCD".split("").map(letter => `
+          <div class="stat">
+            <b>${letter}</b>
+            <br>
+            ${Number(distribution[letter] || 0)}
+          </div>
+        `).join("")}
+      `;
+  }
+
   function renderDelta(
     delta
   ) {
 
     if (!delta) return;
 
+    if (lastState) {
+      if (delta.answers) {
+        lastState.answers = delta.answers;
+      }
+      if (delta.fastest) {
+        lastState.fastest = {
+          ...(lastState.fastest || {}),
+          ...delta.fastest
+        };
+      }
+      render(lastState);
+      return;
+    }
+
     if (delta.answers) {
-
-      $("answer-stats")
-        .classList
-        .remove("hidden");
-
-      $("answer-stats").innerHTML =
-        Object.entries(
-          delta.answers.distribution
-        )
-        .map(
-          ([k, v]) => `
-            <div class="stat">
-              <b>${k}</b>
-              <br>
-              ${v}
-            </div>
-          `
-        )
-        .join("");
+      renderAnswerStats({
+        status: "QUESTION_ACTIVE",
+        question: true,
+        answers: delta.answers,
+        players: []
+      });
     }
 
     if (
@@ -785,6 +822,8 @@
   function render(data) {
 
     if (!data) return;
+
+    lastState = data;
 
     /*
      * Sound
@@ -853,6 +892,16 @@
       $("question-text").textContent =
         data.question.text;
 
+      const distribution =
+        data.answers?.distribution || {};
+
+      const showCounts = [
+        "QUESTION_ACTIVE",
+        "PAUSED",
+        "ANSWER_LOCKED",
+        "REVEAL"
+      ].includes(data.status);
+
       $("options").innerHTML =
         Object.entries(
           data.question.options || {}
@@ -862,36 +911,16 @@
             <div class="option">
               <b>${k}.</b>
               ${escapeHtml(v)}
+              ${showCounts ? `<span class="option-count">${Number(distribution[k] || 0)}</span>` : ""}
             </div>
           `
         )
         .join("");
+    } else if ($("options")) {
+      $("options").innerHTML = "";
     }
 
-    /*
-     * Answer statistics
-     */
-    if (data.answers) {
-
-      $("answer-stats")
-        .classList
-        .remove("hidden");
-
-      $("answer-stats").innerHTML =
-        Object.entries(
-          data.answers.distribution
-        )
-        .map(
-          ([k, v]) => `
-            <div class="stat">
-              <b>${k}</b>
-              <br>
-              ${v}
-            </div>
-          `
-        )
-        .join("");
-    }
+    renderAnswerStats(data);
 
     /*
      * Reveal
@@ -1144,54 +1173,45 @@
     /*
      * Question timer
      */
-    startTimer(
-      data.status ===
-        "QUESTION_ACTIVE"
-        ? data.deadline
-        : null
-    );
+    startTimer(data);
   }
 
   /* =========================================================
      TIMER
   ========================================================= */
 
-  function startTimer(
-    deadline
-  ) {
+  function startTimer(data) {
 
-    clearInterval(
-      timerHandle
-    );
+    clearInterval(timerHandle);
 
-    if (!deadline) {
+    const el = $("timer");
+    if (!el) return;
 
-      $("timer").textContent =
-        "—";
+    const status = data?.status;
+    el.classList.toggle("paused", status === "PAUSED");
 
+    if (status === "PAUSED") {
+      const remaining = data.paused_remaining_seconds;
+      el.textContent = remaining == null
+        ? "PAUSED"
+        : String(Math.max(0, Number(remaining)));
       return;
     }
 
-    timerHandle =
-      setInterval(
-        () => {
+    if (status !== "QUESTION_ACTIVE" || !data.deadline) {
+      el.textContent = "—";
+      return;
+    }
 
-          $("timer").textContent =
-            Math.max(
-              0,
-              Math.ceil(
-                (
-                  new Date(
-                    deadline
-                  ) -
-                  Date.now()
-                ) / 1000
-              )
-            );
-
-        },
-        200
+    const tick = () => {
+      el.textContent = Math.max(
+        0,
+        Math.ceil((new Date(data.deadline) - Date.now()) / 1000)
       );
+    };
+
+    tick();
+    timerHandle = setInterval(tick, 200);
   }
 
   /* =========================================================

@@ -77,6 +77,7 @@ def question_public(gq, include_correct=False):
         "options": q.options(),
         "category": q.category,
         "difficulty": q.difficulty,
+        "started_at": gq.started_at.isoformat() if gq.started_at else None,
     }
     if include_correct:
         payload["correct_option"] = q.correct_option

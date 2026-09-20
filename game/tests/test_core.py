@@ -214,6 +214,37 @@ class CoreGameTests(TestCase):
         self.assertEqual(self.room.status, GameRoom.Status.QUESTION_ACTIVE)
         self.assertEqual(self.room.current_question_number, 2)
 
+    def test_second_question_player_state_does_not_keep_first_answer(self):
+        from game.game import state_for_player
+
+        self.start_first_question()
+        submit_answer(self.room, self.player, "A")
+        lock_question(self.room)
+        reveal_question(self.room)
+        start_question(self.room, 2)
+        self.room.refresh_from_db()
+
+        state = state_for_player(self.room, self.player)
+        self.assertEqual(state["current_question"], 2)
+        self.assertEqual(state["my_answer"]["attempts"], [])
+        self.assertFalse(state["my_answer"]["locked"])
+        self.assertIsNone(state["my_answer"]["selected"])
+        self.assertEqual(state["my_answer"]["question_number"], 2)
+        self.assertEqual(state["question"]["number"], 2)
+
+    def test_host_state_counts_live_option_submissions(self):
+        from game.game import state_for_host
+
+        second_player = create_or_reconnect_player(self.room, "Second", uuid.uuid4())
+        self.start_first_question()
+        self.room.refresh_from_db()
+        submit_answer(self.room, self.player, "A")
+        submit_answer(self.room, second_player, "C")
+
+        state = state_for_host(self.room)
+        self.assertEqual(state["answers"]["submitted"], 2)
+        self.assertEqual(state["answers"]["distribution"], {"A": 1, "B": 0, "C": 1, "D": 0})
+
     def test_question_pause_preserves_remaining_time(self):
         self.start_first_question()
         pause_question(self.room)
