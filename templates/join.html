@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<main class="landing shell compact">
+  <div class="brand">KBC <span>OFFICE EDITION</span></div>
+  <h1>Join Game</h1>
+  <form id="join-form" class="join-form">
+    <input id="name" maxlength="80" placeholder="Your name" required>
+    <input id="code" maxlength="6" placeholder="Room code" required>
+    <button class="btn primary wide">Join Game</button>
+  </form>
+  <div id="join-error" class="alert hidden"></div>
+</main>
+<script src="{% static 'js/join.js' %}"></script>
+{% endblock %}

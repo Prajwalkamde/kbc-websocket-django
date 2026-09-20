@@ -1,0 +1,4 @@
+-r requirements.txt
+websockets>=14,<16
+httpx>=0.28,<1.0
+pytest>=8,<9

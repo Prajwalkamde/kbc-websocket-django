@@ -1,0 +1,81 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: kbc
+      POSTGRES_USER: kbc
+      POSTGRES_PASSWORD: kbc
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kbc -d kbc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    command: ["redis-server", "--appendonly", "yes"]
+
+  web:
+    build: .
+    command: sh -c "python manage.py migrate --noinput && python manage.py seed_questions && python manage.py collectstatic --noinput && daphne -b 0.0.0.0 -p 8000 config.asgi:application"
+    environment:
+      SECRET_KEY: change-me-local-only
+      DEBUG: "True"
+      ALLOWED_HOSTS: "127.0.0.1,localhost"
+      DATABASE_URL: postgresql://kbc:kbc@postgres:5432/kbc
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  worker:
+    build: .
+    command: celery -A config worker -l INFO --concurrency=2
+    environment:
+      SECRET_KEY: change-me-local-only
+      DEBUG: "True"
+      ALLOWED_HOSTS: "127.0.0.1,localhost"
+      DATABASE_URL: postgresql://kbc:kbc@postgres:5432/kbc
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  beat:
+    build: .
+    command: celery -A config beat -l INFO
+    environment:
+      SECRET_KEY: change-me-local-only
+      DEBUG: "True"
+      ALLOWED_HOSTS: "127.0.0.1,localhost"
+      DATABASE_URL: postgresql://kbc:kbc@postgres:5432/kbc
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/1
+      CELERY_RESULT_BACKEND: redis://redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  redis_data:

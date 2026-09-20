@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<main class="host-shell">
+  <header class="topbar">
+    <div><div class="brand">KBC <span>OFFICE EDITION</span></div><div id="room-code" class="room-code">{{ room_code|default:"" }}</div></div>
+    <div class="host-actions">
+      <button id="create-room" class="btn primary">Create Game</button>
+      <button id="sound-toggle" class="btn ghost">🔊 Sound ON</button>
+      <button id="fullscreen" class="btn ghost">⛶ Fullscreen</button>
+      <form method="post" action="/logout/" class="logout-form">{% csrf_token %}<button class="btn danger" type="submit">Logout</button></form>
+    </div>
+  </header>
+  <div id="host-message" class="alert hidden"></div>
+  <section class="host-grid">
+    <aside class="panel host-controls-sidebar">
+      <div class="host-controls">
+        <button id="leaderboard-open" class="btn primary wide" type="button">Show Leaderboard</button>
+        <!-- <button data-action="start_game" class="btn primary wide">Start Game</button> -->
+        <button
+    id="start-fastest"
+    data-action="start_fastest"
+    class="btn wide"
+>
+    Start Fastest Finger
+</button>
+        <button
+    id="finish-fastest"
+    data-action="finish_fastest"
+    class="btn wide"
+    disabled
+>
+    Finish Fastest Finger
+</button>
+        <button data-action="start_question" class="btn wide">Start / Next Question</button>
+        <button data-action="pause" class="btn wide" disabled>Pause Timer</button>
+        <button data-action="resume" class="btn wide" disabled>Resume Timer</button>
+        <button data-action="lock" class="btn wide">Lock Answers</button>
+        <button data-action="reveal" class="btn wide">Reveal Answer</button>
+        <button id="fastest-results-open" class="btn wide" type="button">Fastest Finger Results</button>
+        <button data-action="leaderboard" class="btn wide hidden">Show Leaderboard</button>
+        <button data-action="next" class="btn wide">Continue</button>
+        <button data-action="end" class="btn danger wide">End Game</button>
+      </div>
+    </aside>
+
+    <section class="stage">
+      <div id="fastest-panel" class="card hidden"></div>
+      <div id="question-card" class="card question-card">
+        <div class="stage-head">
+          <div id="stage-state" class="pill">LOBBY</div>
+          <div id="question-number">— / 15</div>
+          <div id="timer" class="timer">—</div>
+        </div>
+        <div id="category" class="eyebrow">Waiting for game</div>
+        <h2 id="question-text">Create a room, then share the code in Teams.</h2>
+        <div id="options" class="options-grid"></div>
+        <div id="answer-stats" class="stats hidden"></div>
+        <div id="reveal" class="reveal hidden"></div>
+      </div>
+      <div id="leaderboard-modal" class="leaderboard-modal hidden" role="dialog" aria-modal="true" aria-labelledby="leaderboard-title">
+        <div class="leaderboard-dialog">
+          <button id="leaderboard-close" class="modal-close" type="button" aria-label="Close leaderboard">×</button>
+          <h2 id="leaderboard-title">Leaderboard</h2>
+          <div id="leaderboard-body"></div>
+        </div>
+      </div>
+      <div id="fastest-results-modal" class="leaderboard-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fastest-results-title">
+        <div class="leaderboard-dialog">
+          <button id="fastest-results-close" class="modal-close" type="button" aria-label="Close fastest finger results">×</button>
+          <h2 id="fastest-results-title">Fastest Finger Results</h2>
+          <div id="fastest-results-body"></div>
+        </div>
+      </div>
+      <div id="final-results" class="card hidden">
+        <h2>Final Results</h2>
+        <div id="final-results-body"></div>
+      </div>
+    </section>
+
+    <aside class="panel players-sidebar">
+      <h3>Active Players <span id="player-count">0</span></h3>
+      <div id="player-list" class="player-list"></div>
+    </aside>
+  </section>
+</main>
+<script src="{% static 'js/host.js' %}"></script>
+{% endblock %}

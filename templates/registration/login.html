@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block content %}
+<main class="landing shell compact">
+  <div class="brand">KBC <span>HOST ACCESS</span></div>
+  <h1>Host Login</h1>
+  <p class="hero-copy">Sign in with the superuser account to host a game.</p>
+  <form method="post" class="join-form">
+    {% csrf_token %}
+    {% if form.non_field_errors %}<div class="alert">Invalid username or password.</div>{% endif %}
+    <label for="id_username">Username</label>
+    <input id="id_username" name="username" type="text" autocomplete="username" required autofocus>
+    <label for="id_password">Password</label>
+    <input id="id_password" name="password" type="password" autocomplete="current-password" required>
+    <input type="hidden" name="next" value="{{ next }}">
+    <button class="btn primary wide" type="submit">Sign In</button>
+  </form>
+  <p class="muted"><a href="/">Back to home</a></p>
+</main>
+{% endblock %}

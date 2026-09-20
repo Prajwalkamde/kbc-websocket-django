@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% load static %}
+{% block content %}
+<main class="player-shell">
+  <header class="topbar">
+    <div><div class="brand">KBC <span>OFFICE EDITION</span></div><div class="room-code">Game: {{ room_code }}</div><div id="my-name" class="muted"></div></div>
+    <div class="score-box"><span>Prize</span><strong id="my-prize">₹0</strong></div>
+  </header>
+
+  <div id="player-message" class="alert hidden"></div>
+
+  <section id="fastest" class="card hidden">
+    <div class="eyebrow">FASTEST FINGER FIRST</div>
+    <h2 id="ff-text"></h2>
+    <div id="ff-items" class="sequence-list"></div>
+    <button id="ff-submit" class="btn primary wide">Submit Order</button>
+  </section>
+
+  <section class="card question-card">
+    <div class="stage-head">
+      <div><span id="q-num">— / 15</span></div>
+      <div id="player-timer" class="timer">Time Over...</div>
+    </div>
+    <div id="category" class="eyebrow">Waiting…</div>
+    <h1 id="question">Waiting for host…</h1>
+    <div id="player-options" class="options-grid"></div>
+
+    <div class="lifelines">
+      <button data-life="50_50" class="life">50:50</button>
+      <!-- <button data-life="FLIP" class="life">Flip</button> -->
+    </div>
+    <div id="poll-box" class="subcard hidden"></div>
+    <div id="expert-box" class="subcard hidden"></div>
+    <div id="result" class="result hidden"></div>
+  </section>
+
+  <section id="final-results" class="card hidden">
+    <h2>Final Results</h2>
+    <div id="final-results-body"></div>
+  </section>
+</main>
+<script>
+window.ROOM_CODE="{{ room_code }}";
+</script>
+<script src="{% static 'js/player.js' %}"></script>
+{% endblock %}
