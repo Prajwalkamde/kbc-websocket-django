@@ -7,8 +7,7 @@ from .game import state_for_host, state_for_player
 from .models import AudiencePoll, ExpertRequest, GameRoom, Player
 from .realtime import (
     broadcast_host_delta,
-    broadcast_host_state,
-    broadcast_private_player_states,
+    broadcast_host_state_throttled,
     broadcast_room,
     send_player_state,
     player_group,
@@ -101,7 +100,9 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_add(player_group(player_id), self.channel_name)
         await self.set_connected(player_id, True)
         await self.send_json({"type": "authenticated", "role": "player", "state": await self.get_player_state(player_id)})
-        await database_sync_to_async(broadcast_host_state)(self.room)
+        # 200 players reconnecting in a burst must not rebuild the full host
+        # state 200 times; the throttled broadcast coalesces the churn.
+        await database_sync_to_async(broadcast_host_state_throttled)(self.room)
 
     async def handle_host_action(self, content):
         action = content.get("action")
@@ -132,9 +133,10 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         else:
             raise GameError("Unknown host action.")
         await self.refresh_room()
+        # One public room.state per stage change is enough: the question text
+        # and status are in the shared state. Rebuilding + pushing 200 private
+        # player states here is what delayed questions by 5–6 s under load.
         await self.broadcast_now("host.action")
-        if action in {"start_question", "pause", "resume", "lock", "reveal"}:
-            await database_sync_to_async(broadcast_private_player_states)(self.room)
 
     async def handle_player_action(self, content):
         action = content.get("action")
@@ -167,12 +169,11 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
             raise GameError("Unknown player action.")
         await self.refresh_room()
         if action in {"answer", "fastest_submit"}:
+            # High-frequency path: only a small delta (counters) goes to the
+            # host. A full state_for_host() per answer is what stalled the
+            # host UI while 200 players were answering.
             event = "player.answer" if action == "answer" else "fastest.submitted"
             await database_sync_to_async(broadcast_host_delta)(self.room, event=event)
-            if action == "answer":
-                # A full host state keeps the per-option counts correct even if
-                # a delta arrives while the host UI is reconnecting.
-                await database_sync_to_async(broadcast_host_state)(self.room)
         elif action == "lifeline":
             # 50:50 is private; Flip changes the shared question and must be broadcast.
             if key == "FLIP":
@@ -197,7 +198,8 @@ class GameConsumer(AsyncJsonWebsocketConsumer):
         if self.role == "player" and getattr(self, "player_id", None):
             try:
                 await self.set_connected(self.player_id, False)
-                await database_sync_to_async(broadcast_host_state)(self.room)
+                # A flood of disconnects coalesces into one host snapshot.
+                await database_sync_to_async(broadcast_host_state_throttled)(self.room)
             except Exception:
                 pass
         if self.role == "player" and getattr(self, "player_id", None):

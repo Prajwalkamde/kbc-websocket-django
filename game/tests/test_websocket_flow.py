@@ -62,6 +62,15 @@ class PlayerSocketFlowTests(TransactionTestCase):
 
     async def wait_for(self, communicator, message_type, timeout=5):
         """Read messages until one matches, ignoring unrelated broadcasts."""
+        return (await self.wait_for_match(
+            communicator,
+            lambda message: message.get("type") == message_type,
+            timeout=timeout,
+            what=message_type,
+        ))[0]
+
+    async def wait_for_match(self, communicator, predicate, timeout=5, what=None):
+        """Read messages until ``predicate`` matches; return (message, seen_types)."""
         deadline = asyncio.get_event_loop().time() + timeout
         seen = []
         while asyncio.get_event_loop().time() < deadline:
@@ -71,9 +80,9 @@ class PlayerSocketFlowTests(TransactionTestCase):
             except asyncio.TimeoutError:
                 break
             seen.append(message.get("type"))
-            if message.get("type") == message_type:
-                return message
-        raise AssertionError(f"{message_type} not received (saw {seen})")
+            if predicate(message):
+                return message, seen
+        raise AssertionError(f"{what or 'match'} not received (saw {seen})")
 
     async def test_host_and_player_complete_one_question(self):
         host = self.host_socket()
@@ -112,11 +121,20 @@ class PlayerSocketFlowTests(TransactionTestCase):
             await self.wait_for(host, "host.state")
 
             await host.send_json_to({"type": "action", "action": "start_question"})
-            private = await self.wait_for(player, "player.private")
-            self.assertEqual(private["state"]["status"], "QUESTION_ACTIVE")
-            self.assertEqual(private["state"]["question"]["number"], 1)
+            # Stage changes are now a single public room.state broadcast:
+            # the public state carries the question text, so the client can
+            # answer without a 200x private-state rebuild per stage change.
+            public, seen = await self.wait_for_match(
+                player,
+                lambda m: m.get("type") == "room.state"
+                and m.get("state", {}).get("status") == "QUESTION_ACTIVE",
+                what="public room.state with QUESTION_ACTIVE",
+            )
+            self.assertEqual(public["state"]["question"]["number"], 1)
             # The solution must not leak while the question is open.
-            self.assertNotIn("correct_option", private["state"]["question"])
+            self.assertNotIn("correct_option", public["state"]["question"])
+            # No per-stage-change private rebuild reached this player.
+            self.assertNotIn("player.private", seen)
 
             await player.send_json_to(
                 {"type": "action", "action": "answer", "option": "B"}

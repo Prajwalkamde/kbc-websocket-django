@@ -1,7 +1,7 @@
 import math
 import random
 import string
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from .constants import (
@@ -330,9 +330,16 @@ def submit_answer(room, player, option):
     if option not in {"A", "B", "C", "D"}:
         raise GameError("Invalid option.")
 
-    answer, _ = Answer.objects.select_for_update().get_or_create(
-        game_question=gq, player=player, defaults={"attempts": []}
-    )
+    # No select_for_update: 200 simultaneous answers must not queue behind a
+    # locked row. A plain get_or_create is enough because
+    # (game_question, player) is unique; the rare concurrent duplicate is
+    # recovered from the IntegrityError instead of holding a lock.
+    try:
+        answer, _ = Answer.objects.get_or_create(
+            game_question=gq, player=player, defaults={"attempts": []}
+        )
+    except IntegrityError:
+        answer = Answer.objects.get(game_question=gq, player=player)
 
     if answer.locked:
         raise GameError("Answer already locked.")

@@ -50,30 +50,33 @@ TEMPLATES = [{
     ]},
 }]
 
-DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
-if DATABASE_URL:
-    DATABASES = {
-        "default": dj_database_url.parse(
-            DATABASE_URL,
-            conn_max_age=60,
-            conn_health_checks=True,
-        )
+DATABASE_URL = os.getenv("DATABASE_URL", "").strip() or (
+    "postgresql://kbc:kbc@127.0.0.1:5432/kbc"
+)
+DATABASES = {
+    "default": dj_database_url.parse(
+        DATABASE_URL,
+        conn_max_age=60,
+        conn_health_checks=True,
+    )
+}
+
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+if REDIS_URL:
+    # Production / multi-process: fan-out through Redis.
+    CHANNEL_LAYERS = {
+        "default": {
+            "BACKEND": "channels_redis.core.RedisChannelLayer",
+            "CONFIG": {"hosts": [REDIS_URL]},
+        },
     }
 else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
+    # Local single-process mode: the in-memory layer is sufficient and needs
+    # no extra service. The moment you run more than one ASGI process, set
+    # REDIS_URL — the in-memory layer cannot broadcast across processes.
+    CHANNEL_LAYERS = {
+        "default": {"BACKEND": "channels.layers.InMemoryChannelLayer"},
     }
-
-REDIS_URL = os.getenv("REDIS_URL", "redis://127.0.0.1:6379/0")
-CHANNEL_LAYERS = {
-    "default": {
-        "BACKEND": "channels_redis.core.RedisChannelLayer",
-        "CONFIG": {"hosts": [REDIS_URL]},
-    },
-}
 
 CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", REDIS_URL)
 CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", REDIS_URL)

@@ -255,10 +255,11 @@
         const m =
           JSON.parse(e.data);
 
-        console.log(
-          "HOST WS MESSAGE:",
-          m
-        );
+        /*
+         * No console.log of full payloads here: with 200 players the host
+         * receives a large host state frequently, and serializing/logging
+         * every one of them is what froze the host UI.
+         */
 
         if (
           m.type === "host.state" ||
@@ -406,13 +407,22 @@
   }
 
   /* =========================================================
-     PLAYERS
+     PLAYERS (throttled DOM rebuild)
   ========================================================= */
 
-  function renderPlayers(players) {
+  /*
+   * With 200 players every full host state carries 200 rows. Join/disconnect
+   * churn therefore rebuilds the list at most once per 400 ms (leading +
+   * trailing throttle). The counter itself is a single text node and is
+   * updated immediately, so it always reflects the full joined total from
+   * player_count — never a stale partial list length.
+   */
+  const PLAYER_LIST_INTERVAL_MS = 400;
+  let playerListTimer = null;
+  let playerListPending = null;
+  let playerListRenderedAt = 0;
 
-    $("player-count").textContent =
-      players?.length || 0;
+  function renderPlayerListRows(players) {
 
     KBCDom.render(
       $("player-list"),
@@ -426,6 +436,44 @@
         ])
       )
     );
+  }
+
+  function renderPlayers(players, total) {
+
+    const countEl = $("player-count");
+
+    if (countEl) {
+
+      countEl.textContent =
+        total != null ? total : (players?.length || 0);
+    }
+
+    const now = Date.now();
+    const sinceLast = now - playerListRenderedAt;
+
+    if (sinceLast >= PLAYER_LIST_INTERVAL_MS) {
+
+      /* Leading edge: rebuild immediately. */
+      playerListRenderedAt = now;
+      renderPlayerListRows(players);
+      return;
+    }
+
+    /*
+     * Trailing edge: coalesce everything in this window into one rebuild
+     * with the latest data.
+     */
+    playerListPending = players;
+
+    if (!playerListTimer) {
+
+      playerListTimer = setTimeout(() => {
+        playerListTimer = null;
+        playerListRenderedAt = Date.now();
+        renderPlayerListRows(playerListPending);
+        playerListPending = null;
+      }, PLAYER_LIST_INTERVAL_MS - sinceLast);
+    }
   }
 
   /* =========================================================
@@ -486,6 +534,29 @@
      FASTEST FINGER RESULTS
   ========================================================= */
 
+  /*
+   * Flatten an answer into display text. Only strings/numbers survive; DOM
+   * nodes or any other object are skipped, because String()-ing a node is
+   * what produced "[object HTMLBRElement]" in the results table.
+   */
+  function answerText(parts) {
+
+    const flat = [];
+
+    const walk = value => {
+      if (value == null) return;
+      if (typeof value === "string" || typeof value === "number") {
+        flat.push(String(value));
+      } else if (Array.isArray(value)) {
+        value.forEach(walk);
+      }
+    };
+
+    walk(parts);
+
+    return flat.join(" → ");
+  }
+
   function renderFastestResults(ff) {
 
     const body = $("fastest-results-body");
@@ -496,23 +567,20 @@
         KBCDom.el("li", {}, [
           KBCDom.el("b", { text: `${index + 1}.` }),
           " ",
-          (option || []).join(" → ")
+          answerText(option)
         ])
       );
 
     const results =
       ff.results?.length
         ? KBCDom.table(
-            ["Rank", "Player", "Answer", "Time"],
+            ["Rank", "Player", "Answer", "Result", "Time"],
             ff.results.map((x, i) => [
               `#${i + 1}`,
               x.name,
+              answerText(x.answer),
               KBCDom.cell(
-                [
-                  (x.answer || []).join(" → "),
-                  KBCDom.el("br"),
-                  KBCDom.el("small", { text: x.correct ? "Correct" : "Wrong" })
-                ],
+                x.correct ? "Correct" : "Wrong",
                 { class: x.correct ? "answer-correct" : "answer-wrong" }
               ),
               `${(Number(x.time || 0) / 1000).toFixed(2)} s`
@@ -531,7 +599,7 @@
       KBCDom.el("p", { class: "fastest-correct-answer" }, [
         KBCDom.el("b", { text: "Correct answer:" }),
         " ",
-        (ff.prompt?.correct_order || []).join(" → ")
+        answerText(ff.prompt?.correct_order)
       ]),
 
       results
@@ -589,33 +657,52 @@
     ]);
   }
 
+  function updateOptionCounts(distribution) {
+
+    const counts =
+      $("options")?.querySelectorAll(".option-count") || [];
+
+    "ABCD".split("").forEach(letter => {
+      const node = counts[letter.charCodeAt(0) - 65];
+      if (node) {
+        node.textContent = String(Number(distribution?.[letter] || 0));
+      }
+    });
+  }
+
+  function updateFastestSubmissions(submissions) {
+
+    const panel = $("fastest-panel");
+    if (!panel) return;
+
+    const line = Array.from(panel.querySelectorAll("p")).find(el =>
+      el.textContent.indexOf("Submissions:") === 0
+    );
+
+    if (line) {
+      line.textContent = `Submissions: ${Number(submissions || 0)}`;
+    }
+  }
+
   function renderDelta(
     delta
   ) {
 
     if (!delta) return;
 
-    if (lastState) {
-      if (delta.answers) {
-        lastState.answers = delta.answers;
-      }
-      if (delta.fastest) {
-        lastState.fastest = {
-          ...(lastState.fastest || {}),
-          ...delta.fastest
-        };
-      }
-      render(lastState);
-      return;
-    }
+    /*
+     * A delta carries only counters. It must NOT call render(): with 200
+     * players every single answer produces a delta, and a full render per
+     * delta would rebuild the player list, leaderboard, options and timer
+     * hundreds of times per question.
+     */
 
     if (delta.answers) {
-      renderAnswerStats({
-        status: "QUESTION_ACTIVE",
-        question: true,
-        answers: delta.answers,
-        players: []
-      });
+      if (lastState) {
+        lastState.answers = delta.answers;
+        renderAnswerStats(lastState);
+      }
+      updateOptionCounts(delta.answers.distribution);
     }
 
     if (
@@ -624,15 +711,14 @@
         undefined
     ) {
 
-      const current =
-        $("fastest-panel")
-          ?.querySelector("p");
-
-      if (current) {
-
-        current.textContent =
-          `Submissions: ${delta.fastest.submissions}`;
+      if (lastState?.fastest) {
+        lastState.fastest = {
+          ...lastState.fastest,
+          submissions: delta.fastest.submissions
+        };
       }
+
+      updateFastestSubmissions(delta.fastest.submissions);
     }
   }
 
@@ -691,7 +777,8 @@
       `${data.current_question || 0} / ${data.total_questions}`;
 
     renderPlayers(
-      data.players
+      data.players,
+      Number(data.player_count ?? data.players?.length ?? 0)
     );
 
     renderLB(
@@ -951,7 +1038,7 @@
               KBCDom.el("div", { class: "fastest-choice" }, [
                 KBCDom.el("b", { text: `${index + 1}.` }),
                 " ",
-                (option || []).join(" → ")
+                answerText(option)
               ])
             )
           ),
