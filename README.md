@@ -84,46 +84,103 @@ docker compose exec web python manage.py createsuperuser
 
 Then open `/login/`, sign in, and open `/host/`.
 
-## Test 150–200 players locally
+## Test 200 players locally
 
-Install dev dependencies on your machine:
+The 200-player scenario is tested with `tools/ws_load_test.py`, which drives
+exactly what a browser does:
+
+- **Join** is `GET /join/` (sets the CSRF cookie) then `POST /api/rooms/join/`
+  with `X-CSRFToken` + `Referer`. Every join sends a **unique**
+  `session_id` (`str(uuid.uuid4())`), so 200 joins create 200 distinct
+  players — a shared session cookie would collapse them into one player.
+- Each player then opens one persistent WebSocket, authenticates, and acts on
+  every state message: it submits a Fastest Finger ordering while the room
+  status is `FASTEST_FINGER` and answers while a question is active.
+- Late-lock errors that are normal in a 200-player run ("Answer already
+  locked.", "Fastest Finger is not accepting answers.") are counted
+  separately and do not fail the run.
+
+The app uses **PostgreSQL** (no SQLite fallback). With Docker, start just
+the database first:
 
 ```bash
-pip install -r requirements-dev.txt
+docker compose up -d postgres   # creates the kbc database/user on port 5432
 ```
 
-Create a room from the host UI and copy its six-character code. Then run:
+Then start one Daphne process and run the game (defaults match the compose
+file; override with `DATABASE_URL` for anything else):
 
 ```bash
-python tools/ws_load_test.py --url http://127.0.0.1:8000 --room ABC123 --players 150
+python manage.py migrate
+python manage.py createsuperuser   # once
+python -m daphne -b 0.0.0.0 -p 8000 config.asgi:application
+
+python tools/ws_load_test.py --players 200 --full-game \
+    --host-username admin --host-password admin \
+    --ff-seconds 8 --question-seconds 6 --duration 240
 ```
 
-For 200 players:
+The tool logs in as the host, creates the room, waits for all 200 players to
+join, starts and finishes Fastest Finger, then runs questions 1–15 through
+lock/reveal/next. A healthy run reports:
+
+```text
+Joins        : 200 ok, 0 failed
+Sessions     : 200 unique player session_ids (every join sends its own uuid4 session_id)
+WebSockets   : 200 connected, 0 failed, 0 auth errors
+Traffic      : … events received, 3000 answers sent, 200 fastest-finger
+               submissions sent, 0 server errors
+```
+
+### Players into an existing room (`--room`)
+
+Create a room from the host UI (or the REST API), copy its six-character
+code, and:
 
 ```bash
 python tools/ws_load_test.py --url http://127.0.0.1:8000 --room ABC123 --players 200
 ```
 
-Keep the terminal running while the host starts questions. This tests the important part of the new architecture: hundreds of persistent WebSocket connections without hundreds of HTTP polling requests per second.
+Keep the terminal running while the host starts questions; this exercises
+hundreds of persistent WebSocket connections with no HTTP polling.
 
-The script also accepts:
+Other useful options:
 
 ```text
---join-concurrency 25   parallel /api/rooms/join/ requests (keeps the fan-out bounded)
---answer-chance 0.9     simulate players answering each question
+--join-concurrency 5    parallel /api/rooms/join/ requests (default 5)
+--answer-chance 1.0     probability a client answers each question
 --answer-delay 2        max simulated thinking time before an answer
---duration 90           stop automatically after N seconds
+--ff-seconds 8          how long Fastest Finger stays open (--full-game)
+--question-seconds 6    how long each question stays open (--full-game)
+--duration 240          stop after N seconds (0 = run until Ctrl+C)
 --json                  machine-readable summary
 ```
 
-For example, 200 players that answer every question for 90 seconds:
-
-```bash
-python tools/ws_load_test.py --room ABC123 --players 200 --answer-chance 0.9 --duration 90
-```
-
 The summary reports join and WebSocket-connect latency (median and p95),
-events received, answers submitted and failures.
+unique session count, events received, answers and Fastest Finger
+submissions sent, ignored late-lock errors and failures.
+
+### How the join/answer bursts are handled
+
+200 players joining in seconds and answering in parallel is absorbed by the
+server, not the database:
+
+- Joins, disconnects and reconnections coalesce into at most one host
+  snapshot per ~0.5 s (`broadcast_host_state_throttled`), so the lobby
+  churn never rebuilds the full host state per player.
+- Answers and Fastest Finger submissions send the host a small delta
+  (ORM-aggregated counters only) instead of a full `state_for_host()`
+  rebuild, and stage changes broadcast one public `room.state` instead of
+  200 private player states.
+- Answer rows use the unique `(game_question, player)` constraint instead
+  of a `select_for_update` row lock, so 200 simultaneous answers do not
+  serialize on one lock; a rare concurrent duplicate is recovered from the
+  `IntegrityError`.
+
+One Daphne process against one PostgreSQL is enough for a 200-player local
+run. For real concurrency use the production stack: **PostgreSQL** plus a
+**Redis channel layer** (set `REDIS_URL`) with multiple ASGI workers — the
+in-memory channel layer only works inside a single process.
 
 ## Non-Docker local setup
 

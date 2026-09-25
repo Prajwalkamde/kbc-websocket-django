@@ -64,7 +64,11 @@
       try {
         const m = JSON.parse(e.data);
 
-        console.log("WS MESSAGE:", m);
+        /*
+         * No console.log of full payloads: every room state broadcast is
+         * logged per player, and with 200 players that floods the console
+         * and slows the page down.
+         */
 
         if (
           m.type === "authenticated" ||

@@ -11,7 +11,7 @@ from django.views.decorators.http import require_GET, require_POST
 
 from .game import state_for_host, state_for_player
 from .models import AudiencePoll, ExpertRequest, GameRoom, Player
-from .realtime import broadcast_host_state, broadcast_room
+from .realtime import broadcast_host_state_throttled, broadcast_room
 from .services import (
     GameError, advance_after_reveal, create_or_reconnect_player, create_room,
     expert_answer, finalize_poll, finish_fastest_finger,
@@ -133,7 +133,9 @@ def api_join_room(request):
         request.session["player_session"] = str(player.session_id)
         request.session["player_room_code"] = room.room_code
         request.session.save()
-        broadcast_host_state(room)
+        # A 200-player lobby means 200 joins in seconds; coalesce them into
+        # ~one host snapshot per 0.5 s instead of one per join.
+        broadcast_host_state_throttled(room)
         return JsonResponse({
             "ok": True,
             "room_code": room.room_code,

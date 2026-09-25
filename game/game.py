@@ -109,30 +109,46 @@ def state_for_host(room):
     state["safe_levels"] = list(SAFE_LEVELS)
     ff = FastestFingerRound.objects.filter(room=room).first()
     if ff:
-        submissions = list(ff.submissions.select_related("player").order_by("response_time_ms", "submitted_at"))
-        state["fastest"] = {
-    "prompt": ff.prompt or FASTEST_PROMPT,
-    "started": bool(ff.started_at),
-    "locked": ff.locked,
-    "can_start": (
-    room.status in {
-        room.Status.LOBBY,
-        room.Status.FASTEST_FINGER,
-    }
-    and (not ff.started_at or ff.locked)
-),
-    "deadline": ff.deadline.isoformat() if ff.deadline else None,
-    "submissions": len(submissions),
-    "results": [
-        {
-            "name": submission.player.display_name,
-            "answer": submission.sequence_answer,
-            "correct": submission.is_correct,
-            "time": submission.response_time_ms,
-        }
-        for submission in submissions
-    ],
-}
+        can_start = (
+            room.status in {
+                room.Status.LOBBY,
+                room.Status.FASTEST_FINGER,
+            }
+            and (not ff.started_at or ff.locked)
+        )
+        if bool(ff.started_at) and not ff.locked:
+            # While the round is live, 200 players are submitting back to
+            # back. The host only needs the running count; ranking every
+            # submission on every update is what froze the host UI. The full
+            # result table is assembled once, when the round is locked.
+            state["fastest"] = {
+                "prompt": ff.prompt or FASTEST_PROMPT,
+                "started": True,
+                "locked": False,
+                "can_start": can_start,
+                "deadline": ff.deadline.isoformat() if ff.deadline else None,
+                "submissions": ff.submissions.count(),
+                "results": [],
+            }
+        else:
+            submissions = list(ff.submissions.select_related("player").order_by("response_time_ms", "submitted_at"))
+            state["fastest"] = {
+                "prompt": ff.prompt or FASTEST_PROMPT,
+                "started": bool(ff.started_at),
+                "locked": ff.locked,
+                "can_start": can_start,
+                "deadline": ff.deadline.isoformat() if ff.deadline else None,
+                "submissions": len(submissions),
+                "results": [
+                    {
+                        "name": submission.player.display_name,
+                        "answer": submission.sequence_answer,
+                        "correct": submission.is_correct,
+                        "time": submission.response_time_ms,
+                    }
+                    for submission in submissions
+                ],
+            }
     else:
         state["fastest"] = {
             **state["fastest"],
